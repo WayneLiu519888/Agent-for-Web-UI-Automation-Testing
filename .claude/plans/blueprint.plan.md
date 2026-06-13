@@ -824,11 +824,12 @@ hooks:
 ┌─────────────────────────────────────────┐
 │ Agent-for-Web-UI-Automation-Testing     │  ← 我们（编排层）
 │ web-init / web-explore / executor /     │
-│ case-generator / web-snapshot           │
+│ case-generator / web-snapshot /         │
+│ web-component-scout                     │
 │                                         │
 │  职责：环境编排、页面探索工作流、        │
 │        用例→Agent推理、测试报告、       │
-│        Acc Tree增强采集                 │
+│        Acc Tree增强采集、组件发现       │
 └──────────────┬──────────────────────────┘
                │ 委托底层操作
                ▼
@@ -855,7 +856,8 @@ hooks:
 | `web-explore` | `all` | 编排层 | 一键探索页面 → 生成增强版 Acc Tree YAML |
 | `test-case-executor` | `all` | 编排层 | 用例执行：Agent 推理 + 委托 Playwright MCP |
 | `case-generator` | `all` | 数据工具 | Excel → YAML 批量转换 |
-| `web-snapshot` | `all` | 增强工具 | Playwright MCP `browser_snapshot` 增强版（DOM+几何+locator+框架） |
+| `web-snapshot` | `all` | 增强工具 | 增强版 Acc Tree 快照（DOM+几何+locator+框架+事件） |
+| `web-component-scout` | `all` | 发现工具 | 交互式组件发现 → 生成项目级组件配置 |
 
 ### 平台兼容设计
 
@@ -875,6 +877,7 @@ OpenCode:     在 opencode.json 中声明
 | `/exec-test` | test-case-executor | `/exec-test test-cases/login/*.yaml --parallel=3` |
 | `/gen-cases` | case-generator | `/gen-cases test-cases/登录模块.xlsx` |
 | `/snap` | web-snapshot | `/snap` (当前页面增强快照) |
+| `/scout` | web-component-scout | `/scout my-app --url=https://admin.example.com` |
 
 ---
 
@@ -1022,70 +1025,788 @@ Excel 列名映射（任一别名匹配即可）:
 ```
 
 ```
+### 工具 6：`web-component-scout`（组件发现器）
+
+```
+名称: web-component-scout
+标题: Web Component Scout
+描述: |
+  交互式组件发现工具。打开 Chromium（非 headless），测试人员手动浏览所有页面，
+  系统自动采集 DOM 组件签名 → 识别项目专属组件 → 生成项目级组件配置。
+  web-explore=自动爬虫(headless+BFS→AccTree)，scout=交互探索(非headless+人工浏览→组件字典)
+visibility: all
+
 输入:
-  - url (必填): 页面 URL
-  - mode (可选, 默认 "quick"): "quick" | "deep"
-  - max_depth (可选, 默认 2): 深度探索爬取深度
-  - max_pages (可选, 默认 20): 最大页面数
-  - output_dir (可选, 默认 "acc-trees"): 输出目录
+  - project (必填): 项目名称 → dictionaries/projects/{project}/
+  - base_url (必填): 起始 URL
+  - session_timeout (可选, 默认 3600): 最长会话秒数
+
+内部流程:
+  1. 加载 base/controls.yaml + base/events.yaml
+  2. browser_navigate(base_url) → Chromium(非headless)
+  3. 监听器: URL变化 + DOM突变(MutationObserver,debounce 500ms) + 轮询 3s
+  4. 每次变化 → DOM采集 → 拆分className提取组件前缀 → 去重
+  5. 对照base字典 → 标记known/unknown(pending_review)
+  6. stop或超时 → 汇总生成 components.yaml + discovery_report.json
 
 输出:
-  - explored_pages: 页面列表及 YAML 路径
-  - summary: 总页面数、总元素数
-  - errors: 失败的 URL
+  - project_config_path: components.yaml路径
+  - discovery_report: {total_pages,total_found,known[],new[],new_prefixes[],recommendations[]}
+
+命令: /scout <project> --url=<base_url>
 ```
 
-### 工具 2：`web-init`
+### 2.4 交互事件字典体系（可配置）
+
+> **交互事件字典从硬编码重构成外部 YAML 配置文件**，支持按项目扩展。不同项目的前端架构各不相同（Ant Design Vue / Element Plus / Naive UI / 自研组件库），字典必须可定制。
+
+#### 2.4.1 字典目录结构
 
 ```
-输入:
-  - environment (必填): 环境名 (environments/{name}.yaml)
-  - account (可选, 默认 "admin")
-  - headless (可选, 默认 true)
-  - save_state (可选, 默认 true)
-
-输出:
-  - status: "initialized"
-  - browser_ws_endpoint: WebSocket 端点
-  - storage_state_path: 登录态路径
-  - page_title: 当前页面标题
-  - login_success: 是否登录成功
+dictionaries/
+├── README.md                   # 字典体系说明 + match 语法文档
+├── base/                       # ★ 基础字典（提交 git，随版本发布）
+│   ├── events.yaml             # 60+ 交互事件注册表
+│   └── controls.yaml           # 通用 HTML/ARIA 控件 → 事件映射规则
+├── projects/                   # ★ 项目字典（整体 .gitignore）
+│   └── {project-name}/
+│       ├── components.yaml     # web-component-scout 自动生成
+│       └── _overrides.yaml     # 人工修正（优先级最高，不会因重新运行 scout 丢失）
+└── schemas/                    # JSON Schema 校验文件
 ```
 
-### 工具 3：`test-case-executor`
+#### 2.4.2 三级字典优先级
+
+加载顺序（后者覆盖前者）：
 
 ```
-输入:
-  - cases (必填): 用例 YAML 路径数组
-  - parallel (可选, 默认 1): 并行数（≤ executor.max_parallel）
-  - environment (可选): 环境配置名
-  - headless (可选, 默认 true)
-  - retry (可选, 默认 0): 失败重试
-  - stop_on_failure (可选, 默认 false): P0 失败终止
-
-输出:
-  - total / passed / failed / skipped
-  - duration_ms
-  - results: [{case_id, status, duration_ms, error, screenshots[]}]
-  - report_path: 报告文件路径
+优先级 1 (最高): projects/{name}/_overrides.yaml   — 人工精确控制
+优先级 2:        projects/{name}/components.yaml   — 工具自动发现
+优先级 3 (默认): base/events.yaml + base/controls.yaml — 通用默认
 ```
 
-并行隔离：每 Worker 独立 BrowserContext，共享 Browser 进程。工作窃取模式调度。
+#### 2.4.3 base/events.yaml
 
-### 工具 4-7：底层原子操作
+```yaml
+# 交互事件字典 v1.0
+# 所有 [references] 标记表示该事件被 controls.yaml 中的某条规则引用
 
-| 工具 | 参数 | 行为 |
-|------|------|------|
-| `web-navigate` | `url`, `wait_until`, `referer` | 导航并返回 acc tree |
-| `web-act` | `action`, `target`, `value?`, `post_wait?` | 单步操作后返回 acc tree |
-| `web-assert` | `target`, `expect`, `expect_value?`, `timeout?` | 断言验证 |
-| `web-snapshot` | `compact?` | 获取当前页面 acc tree |
+events:
+  # === 点击类 ===
+  - id: click
+    category: pointer
+    description: 鼠标左键单击
+  - id: dblclick
+    category: pointer
+    description: 鼠标左键双击
+  - id: right_click
+    category: pointer
+    description: 鼠标右键单击
+  - id: long_press
+    category: pointer
+    description: 长按（移动端）
 
-### 工具 8：`web-state`（仅 stdio）
+  # === 悬停类 ===
+  - id: hover
+    category: hover
+    description: 鼠标悬停（触发 tooltip/dropdown/highlight）
+  - id: hover_tooltip
+    category: hover
+    description: 悬停显示 tooltip 提示
+  - id: hover_dropdown
+    category: hover
+    description: 悬停打开下拉菜单
 
-查看浏览器状态，参数 `scope`: "browser" | "context" | "page" | "all"
+  # === 输入类 ===
+  - id: fill
+    category: input
+    description: 填充文本
+  - id: clear
+    category: input
+    description: 清空内容
+  - id: type_char_by_char
+    category: input
+    description: 逐字符输入（触发实时搜索）
+  - id: paste
+    category: input
+    description: 粘贴
+  - id: submit_on_enter
+    category: input
+    description: 回车提交表单
+  - id: autocomplete
+    category: input
+    description: HTML5 autocomplete 下拉建议
+
+  # === 选择类 ===
+  - id: select_single
+    category: select
+    description: 单选
+  - id: select_multi
+    category: select
+    description: 多选
+  - id: search_and_select
+    category: select
+    description: 搜索后选择（可搜索下拉框）
+  - id: clear_all
+    category: select
+    description: 清除所有已选项
+  - id: deselect
+    category: select
+    description: 取消单个已选项
+
+  # === 下拉/弹出类 ===
+  - id: open_dropdown
+    category: popup
+    description: 打开下拉面板
+  - id: close_dropdown
+    category: popup
+    description: 关闭下拉面板
+  - id: filter_options
+    category: popup
+    description: 过滤下拉选项
+
+  # === 勾选类 ===
+  - id: check
+    category: toggle
+    description: 勾选
+  - id: uncheck
+    category: toggle
+    description: 取消勾选
+  - id: toggle
+    category: toggle
+    description: 切换选中状态
+  - id: turn_on
+    category: toggle
+    description: 打开开关
+  - id: turn_off
+    category: toggle
+    description: 关闭开关
+
+  # === 滑动/数值类 ===
+  - id: set_value
+    category: range
+    description: 设置具体值
+  - id: increment
+    category: range
+    description: 增加步长
+  - id: decrement
+    category: range
+    description: 减少步长
+  - id: drag_to
+    category: range
+    description: 拖拽到指定位置
+
+  # === 对话框类 ===
+  - id: dialog_open
+    category: dialog
+    description: 打开对话框/弹窗
+  - id: dialog_close
+    category: dialog
+    description: 关闭对话框
+  - id: dialog_confirm
+    category: dialog
+    description: 确认对话框
+  - id: dialog_cancel
+    category: dialog
+    description: 取消对话框
+  - id: dialog_dismiss
+    category: dialog
+    description: 点击遮罩关闭
+
+  # === 菜单/树/展开类 ===
+  - id: expand
+    category: tree
+    description: 展开节点
+  - id: collapse
+    category: tree
+    description: 折叠节点
+  - id: select_item
+    category: tree
+    description: 选择菜单项/树节点
+
+  # === 表格类 ===
+  - id: select_row
+    category: table
+    description: 选中行
+  - id: select_all
+    category: table
+    description: 全选
+  - id: sort_by_column
+    category: table
+    description: 按列排序
+  - id: filter_column
+    category: table
+    description: 列过滤
+  - id: resize_column
+    category: table
+    description: 调整列宽
+  - id: drag_row
+    category: table
+    description: 拖拽行排序
+  - id: paginate
+    category: table
+    description: 翻页
+
+  # === 日期类 ===
+  - id: pick_date
+    category: date
+    description: 选择日期
+  - id: pick_time
+    category: date
+    description: 选择时间
+  - id: pick_range
+    category: date
+    description: 选择日期范围
+  - id: date_clear
+    category: date
+    description: 清空日期
+  - id: date_today
+    category: date
+    description: 跳转到今天
+
+  # === 文件类 ===
+  - id: select_file
+    category: file
+    description: 选择文件
+  - id: drag_drop_file
+    category: file
+    description: 拖放文件
+  - id: remove_file
+    category: file
+    description: 移除已选文件
+
+  # === 拖拽类 ===
+  - id: drag_start
+    category: drag
+    description: 开始拖拽
+  - id: drag_end
+    category: drag
+    description: 结束拖拽
+  - id: drop
+    category: drag
+    description: 释放拖拽目标
+
+  # === 多媒体类 ===
+  - id: play
+    category: media
+    description: 播放
+  - id: pause
+    category: media
+    description: 暂停
+  - id: stop
+    category: media
+    description: 停止
+  - id: seek
+    category: media
+    description: 跳转进度
+  - id: volume
+    category: media
+    description: 调整音量
+  - id: fullscreen
+    category: media
+    description: 全屏
+
+  # === 键盘类 ===
+  - id: press_key
+    category: keyboard
+    description: 按键盘按键
+  - id: press_shortcut
+    category: keyboard
+    description: 按组合快捷键
+
+  # === 焦点类 ===
+  - id: focus
+    category: focus
+    description: 获得焦点
+  - id: blur
+    category: focus
+    description: 失去焦点
+
+  # === 滚动类 ===
+  - id: scroll_to
+    category: scroll
+    description: 滚动到指定位置
+  - id: scroll_into_view
+    category: scroll
+    description: 滚动到可视区
+```
+
+#### 2.4.4 base/controls.yaml（声明式 match 语法）
+
+```yaml
+# 控件→事件映射规则 v1.0
+# match 语法: 每个条件字段 AND 逻辑，规则间叠加合并
+
+rules:
+  # ─── 按钮类 ───
+  - id: btn-basic
+    priority: 10
+    match:
+      any:                          # 任一条件满足即命中
+        - tagName: "button"
+        - role: "button"
+        - tagName: "a"
+    events:
+      - click
+      - focus
+      - blur
+    conditional_events:
+      - when:
+          domAttr:
+            type: "submit"
+        events:
+          - submit_on_enter
+      - when:
+          domHasAttr: "title"
+        events:
+          - hover
+      - when:
+          componentContains: "dropdown"
+        events:
+          - hover
+          - open_dropdown
+
+  # ─── 文本输入类 ───
+  - id: textbox-basic
+    priority: 10
+    match:
+      any:
+        - role: "textbox"
+        - role: "searchbox"
+    events:
+      - fill
+      - clear
+      - focus
+      - blur
+      - press_key
+      - scroll_into_view
+    conditional_events:
+      - when:
+          role: "searchbox"
+        events:
+          - type_char_by_char
+      - when:
+          domHasAttr: "autocomplete"
+        events:
+          - autocomplete
+      - when:
+          a11yAttr:
+            multiline: true
+        events:
+          - paste
+
+  # ─── HTML input[type=number] ───
+  - id: input-number-spin
+    priority: 20
+    match:
+      all:
+        - tagName: "input"
+        - domAttr:
+            type: "number"
+    events:
+      - fill
+      - set_value
+      - increment
+      - decrement
+      - focus
+      - blur
+      - press_key
+
+  # ─── 下拉/选择类 ───
+  - id: combobox-basic
+    priority: 10
+    match:
+      any:
+        - role: "combobox"
+        - role: "listbox"
+        - tagName: "select"
+    events:
+      - open_dropdown
+      - close_dropdown
+      - select_single
+      - focus
+      - blur
+      - scroll_into_view
+    conditional_events:
+      - when:
+          domHasAttr: "multiple"
+        events:
+          - select_multi
+          - clear_all
+          - deselect
+      - when:
+          componentContains: "ant-select"
+        events:
+          - select_single
+      - when:
+          classContains: "ant-select-show-search"
+        events:
+          - search_and_select
+      - when:
+          componentContains: "el-select"
+        events:
+          - select_single
+
+  # ─── 复选框 ───
+  - id: checkbox-basic
+    priority: 10
+    match:
+      role: "checkbox"
+    events:
+      - check
+      - uncheck
+      - toggle
+      - focus
+      - blur
+      - press_key
+
+  # ─── 单选框 ───
+  - id: radio-basic
+    priority: 10
+    match:
+      role: "radio"
+    events:
+      - check
+      - toggle
+      - focus
+      - blur
+      - press_key
+
+  # ─── 开关类 ───
+  - id: switch-basic
+    priority: 10
+    match:
+      role: "switch"
+    events:
+      - turn_on
+      - turn_off
+      - toggle
+      - focus
+      - blur
+
+  # ─── 滑动条 ───
+  - id: slider-basic
+    priority: 10
+    match:
+      role: "slider"
+    events:
+      - set_value
+      - drag_to
+      - increment
+      - decrement
+      - focus
+      - blur
+
+  - id: spinbutton-basic
+    priority: 10
+    match:
+      role: "spinbutton"
+    events:
+      - set_value
+      - increment
+      - decrement
+      - focus
+      - blur
+
+  # ─── 表格列头 ───
+  - id: columnheader-basic
+    priority: 10
+    match:
+      role: "columnheader"
+    events:
+      - click
+      - focus
+      - blur
+    conditional_events:
+      - when:
+          any:
+            - classContains: "ant-table-column-has-sorters"
+            - classContains: "column-has-sorters"
+        events:
+          - sort_by_column
+      - when:
+          any:
+            - classContains: "ant-table-column-has-filters"
+            - classContains: "column-has-filters"
+        events:
+          - filter_column
+          - open_dropdown
+
+  # ─── 表格行 ───
+  - id: row-basic
+    priority: 10
+    match:
+      role: "row"
+    events:
+      - select_row
+      - click
+
+  # ─── 表格容器 ───
+  - id: table-basic
+    priority: 15
+    match:
+      any:
+        - role: "table"
+        - role: "grid"
+    events:
+      - sort_by_column
+      - filter_column
+      - select_row
+      - select_all
+      - paginate
+      - resize_column
+
+  # ─── 树节点 ───
+  - id: treeitem-basic
+    priority: 10
+    match:
+      role: "treeitem"
+    events:
+      - expand
+      - collapse
+      - select_item
+      - click
+
+  # ─── 级联选择器 ───
+  - id: ant-cascader
+    priority: 30
+    match:
+      componentContains: "ant-cascader"
+    events:
+      - open_dropdown
+      - close_dropdown
+      - expand
+      - collapse
+      - select_single
+
+  # ─── 菜单项 ───
+  - id: menuitem-basic
+    priority: 10
+    match:
+      any:
+        - role: "menuitem"
+        - role: "menuitemcheckbox"
+        - role: "menuitemradio"
+    events:
+      - click
+      - select_item
+      - hover
+      - focus
+      - blur
+
+  # ─── 对话框/弹窗 ───
+  - id: dialog-basic
+    priority: 10
+    match:
+      any:
+        - role: "dialog"
+        - role: "alertdialog"
+    events:
+      - dialog_close
+      - press_key
+    conditional_events:
+      - when:
+          classContains: "confirm"
+        events:
+          - dialog_confirm
+          - dialog_cancel
+
+  # ─── 日期选择器（组件类型检测）───
+  - id: datepicker-component
+    priority: 30
+    match:
+      any:
+        - componentContains: "picker"
+        - componentContains: "date-picker"
+        - componentContains: "datepicker"
+    events:
+      - pick_date
+      - focus
+      - blur
+    conditional_events:
+      - when:
+          componentContains: "range"
+        events:
+          - pick_range
+          - date_clear
+
+  # ─── 文件上传 ───
+  - id: file-upload
+    priority: 20
+    match:
+      all:
+        - tagName: "input"
+        - domAttr:
+            type: "file"
+    events:
+      - select_file
+      - drag_drop_file
+      - remove_file
+
+  # ─── 分页器 ───
+  - id: pagination-component
+    priority: 30
+    match:
+      any:
+        - componentContains: "ant-pagination"
+        - componentContains: "el-pagination"
+        - componentContains: "n-pagination"
+        - componentContains: "arco-pagination"
+    events:
+      - paginate
+      - click
+```
+
+#### 2.4.5 projects/{name}/_overrides.yaml（人工修正示例）
+
+```yaml
+# 项目自定义覆盖配置
+# 此文件不会因重新运行 web-component-scout 而丢失
+
+project: "my-admin-system"
+last_updated: "2026-06-14"
+
+# 完全替换某组件的交互事件
+override:
+  - component: "ant-select"
+    events:
+      - search_and_select    # 本项目的 Select 全是可搜索的
+      - open_dropdown
+      - close_dropdown
+      - select_single
+      - focus
+      - blur
+
+# 对已发现组件追加事件
+add_events:
+  - component: "custom-signature"
+    events:
+      - drag_to
+      - click
+
+# 对已发现组件移除事件
+remove_events:
+  - component: "ant-btn-link"
+    events:
+      - submit_on_enter      # 链接按钮不解 submit
+```
+
+#### 2.4.6 projects/{name}/components.yaml（scout 自动生成示例）
+
+```yaml
+# 项目组件配置 — 由 web-component-scout 自动生成
+project: "my-admin-system"
+generated_at: "2026-06-14T10:30:00Z"
+base_url: "https://admin.example.com"
+pages_visited: 12
+components_total: 38
+known_components: 28
+new_components: 10
+
+components:
+  - id: "ant-btn"
+    prefix: "ant-"
+    role: "button"
+    tagName: "button"
+    events:
+      - click
+      - focus
+      - blur
+    usage: 87
+    pages: ["/login", "/dashboard", "/users", "/settings"]
+
+  - id: "ant-select"
+    prefix: "ant-"
+    role: "combobox"
+    tagName: "div"
+    variants:
+      - "ant-select-show-search"    # 可搜索版本
+      - "ant-select-multiple"       # 多选版本
+    events:
+      - open_dropdown
+      - close_dropdown
+      - select_single
+      - search_and_select
+      - focus
+      - blur
+    usage: 23
+    pages: ["/users", "/settings"]
+
+  - id: "custom-chart-card"
+    prefix: null
+    role: "generic"
+    tagName: "div"
+    status: "pending_review"
+    suggested_events:
+      - click
+      - hover
+    usage: 5
+    pages: ["/dashboard"]
+```
 
 ---
+
+### 2.5 交互事件推断器（InteractionInferrer — 配置驱动版）
+
+```typescript
+/**
+ * 交互事件推断器（配置驱动，替代硬编码 inferInteractionEvents()）
+ * 三级字典优先级: _overrides.yaml > components.yaml > base/controls.yaml
+ */
+class InteractionInferrer {
+  private baseEvents: Map<string, EventDef>;
+  private baseControls: ControlRule[];
+  private projectComponents: Map<string, string[]>;
+  private removeEvents: Map<string, Set<string>>;
+  private overrideComponents: Map<string, string[]>;
+  private interactiveRoles: Set<string>;
+
+  constructor(dictDir: string, projectName?: string);
+
+  /** 根据 AccTreeNode 推断该元素支持的所有交互事件 */
+  infer(node: AccTreeNode): string[];
+
+  /** 判定元素是否可交互 */
+  isActionable(node: AccTreeNode): boolean;
+
+  /** 评估 YAML match 条件 */
+  private evaluateMatch(node: AccTreeNode, cond: MatchCondition): boolean;
+}
+
+function enrichInteraction(
+  node: AccTreeNode,
+  inferrer: InteractionInferrer,  // ★ 依赖注入
+): InteractionInfo {
+  const events = inferrer.infer(node);
+  const actionable = inferrer.isActionable(node);
+  return {
+    events,
+    actionable,
+    scrollNeeded: actionable && !node.geometry.isInViewport,
+    obscured: false,
+    currentValue: extractCurrentValue(node),
+    options: extractOptions(node),
+    checked: node.a11y.checked,
+    constraints: extractConstraints(node),
+  };
+}
+```
+
+**采集算法第 5 步变更**：
+
+```
+旧: ★ enrichInteraction(node): 交互事件推断规则参见 InteractionEventDictionary
+新: ★ enrichInteraction(node, inferrer):
+      交互事件由 dictionaries/base/controls.yaml + projects/{name}/components.yaml
+      + projects/{name}/_overrides.yaml 三级字典规则引擎推断
+      inferrer 在工具初始化时根据项目名选择性加载项目字典
+```
+
+---
+
+## 三、工具设计（共 6 个）
+
+### 3.0 核心原则：编排层 ≠ 执行层
 
 ## 四、全局配置文件
 
@@ -1162,14 +1883,20 @@ Agent-for-Web-UI-Automation-Testing/
 ├── src/
 │   ├── index.ts
 │   ├── config/     (mcp.config.yaml 加载 + Zod schema)
-│   ├── types/      (tool.ts + yaml.ts)
-│   ├── tools/      (5 个 MCP 工具定义)
-│   ├── core/       (Acc Tree 增强采集、Locator构建、事件推断、探索器、执行器、YAML 读写)
+│   ├── types/      (tool.ts + yaml.ts + interaction-events.ts)
+│   ├── tools/      (6 个 MCP 工具定义)
+│   ├── core/       (AccTree采集、Locator构建、InteractionInferrer、DOM采集、组件分析、配置生成、探索器、执行器、YAML读写)
 │   ├── server/     (McpServer 工厂)
 │   ├── entries/    (stdio.ts + http.ts)
 │   └── utils/      (env 变量替换、日志、Playwright MCP 调用代理)
 │
-├── screenshots/ / reports/ / traces/ / logs/
+├── dictionaries/              # ★ 新增：交互事件字典体系
+│   ├── README.md
+│   ├── base/                  # 基础字典（提交 git）
+│   │   ├── events.yaml
+│   │   └── controls.yaml
+│   ├── projects/              # 项目字典（.gitignore）
+│   └── schemas/               # JSON Schema 校验
 ```
 
 ---
@@ -1204,7 +1931,18 @@ Agent-for-Web-UI-Automation-Testing/
 
 /web-snapshot
   ├─ 委托 Playwright MCP: browser_snapshot() → ARIA 树
-  └─ page.evaluate() → DOM/几何/框架 补采增强
+  ├─ page.evaluate() → DOM/几何/框架 补采增强
+  └─ InteractionInferrer.infer() → events[] (配置驱动)
+
+/web-component-scout
+  ├─ 加载 dictionaries/base/controls.yaml
+  ├─ 委托 Playwright MCP: browser_navigate(base_url) → Chromium(非headless)
+  ├─ 循环监听（直到用户停止）:
+  │   ├─ URL变化 + DOM突变 + 定时轮询
+  │   ├─ page.evaluate() → 全量DOM组件签名
+  │   ├─ 拆分className → 组件前缀 + 去重
+  │   └─ 对照base字典 → known/unknown
+  └─ 生成: projects/{name}/components.yaml + discovery_report
 ```
 
 ---
@@ -1213,9 +1951,9 @@ Agent-for-Web-UI-Automation-Testing/
 
 | Phase | 内容 | 核心产出 |
 |-------|------|----------|
-| 1 | 基础能力层 | Acc Tree 增强采集器、Locator 构建器、YAML 读写、InteractionEventDictionary 事件推断器 |
-| 2 | YAML 类型体系 | types/yaml.ts（全部 Zod schema） |
-| 3 | 探索器 | explorer.ts (quick/deep), explore.tool.ts |
+| 1 | 基础能力层 | AccTree采集、Locator构建、YAML读写、InteractionInferrer(配置驱动) + dictionaries/base/ |
+| 2 | YAML 类型体系 | types/yaml.ts + dictionaries/ 相关 Zod schema |
+| 3 | 探索器 | explorer.ts (quick/deep), explore.tool.ts, web-component-scout.tool.ts |
 | 4 | 执行器 | executor.ts (Agent 推理调度+并行), executor.tool.ts |
 | 5 | init + 快照 + 用例生成 | init.tool.ts, snapshot.tool.ts, case-generator.tool.ts |
 | 6 | 集成 + 文档 | mcp.config.yaml, config loader, README, 示例 |
@@ -1231,7 +1969,8 @@ Agent-for-Web-UI-Automation-Testing/
 | Context 资源耗尽 | 低 | 配置硬上限 `max_parallel: 4`，单 Browser 可承载数十 Context |
 | YAML 用例维护成本 | 低 | case-generator 从 Excel 自动转换；Agent 可直接根据 acc tree 编写用例 |
 | LLM 推理步骤翻译不准确 | 中 | Acc Tree 提供多策略定位器降级链；失败时截图→LLM 重新推理 |
-| 交互事件推断覆盖不足 | 低 | 新增 AUI 组件时扩展 inferInteractionEvents()；dict 独立文件易于维护 |
+| 交互事件推断覆盖不足 | ~~低~~ → **极低** | 字典体系(三级优先级) + web-component-scout 自动发现 + _overrides.yaml 人工兜底 |
+| 项目字典与基础字典版本不一致 | 低 | YAML version 字段做兼容检查；base 更新时 tools/dict-migrate 迁移 |
 
 ---
 
@@ -1243,6 +1982,8 @@ Agent-for-Web-UI-Automation-Testing/
 4. ~~**Excel→YAML 转换**~~ ✅
 5. ~~**底层原子工具重复**~~ ✅
 6. ~~**Acc Tree 采集深度**~~ ✅ 全量 DOM + 仅保留可见/可交互
-7. ~~**交互事件字典**~~ ✅ 已完成：InteractionEventDictionary → events[] 字段 + enrichInteraction() 推断器
-8. **并行隔离粒度** — 同 par_group 共享 Context（快），不同组独立（安全），设计合理？
-9. **组件交互知识库** — Acc Tree v2 标记了 componentType，是否需要 AUI 组件交互策略库？→ Phase 2-3 后决定
+7. ~~**交互事件字典**~~ ✅ 已完成：InteractionEventDictionary → InteractionInferrer（配置驱动），dictionaries/ YAML 体系
+8. ~~**事件字典可配置化**~~ ✅ 已完成：三级优先级（overrides > components > base），声明式 match 语法
+9. ~~**组件发现工具**~~ ✅ 已完成：web-component-scout，交互式探索→生成项目组件配置
+10. **并行隔离粒度** — 同 par_group 共享 Context（快），不同组独立（安全），设计合理？
+11. **events 字段升级** — 当前 `string[]`，Phase 2+ 是否需要 confidence/source 结构？→ 保持简单，Phase 2 后再评估

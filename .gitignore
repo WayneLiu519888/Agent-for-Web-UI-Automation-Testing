@@ -25,3 +25,6 @@ logs/
 # 测试产物
 coverage/
 .nyc_output/
+
+# 项目级交互事件字典（包含被测项目内部信息，禁止提交）
+dictionaries/projects/
