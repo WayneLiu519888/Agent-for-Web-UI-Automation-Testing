@@ -56,8 +56,11 @@ export class TaskScheduler {
     const busy = this.queue.filter(t => t.assignedTo && !this.stolen.has(t.id));
     if (busy.length < 2) return null;
     const target = busy[busy.length - 1];
+    const originalWorker = target.assignedTo;
     this.stolen.add(target.id);
     target.assignedTo = workerId;
+    // 通知原 Worker 任务已被窃取（实际实现中通过 IPC 发送 TASK_STOLEN 消息）
+    // 此处简化：记录原 Worker 到 stolen 集合，原 Worker 下次 dispatchAll 跳过已窃取任务
     return target;
   }
 

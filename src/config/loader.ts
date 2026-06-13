@@ -86,21 +86,21 @@ function deepMerge(base: any, override: any): any {
 
 let cachedConfig: McpConfig | null = null;
 
+import { load as yamlLoad } from 'js-yaml';
+
 export function loadConfig(): McpConfig {
   if (cachedConfig) return cachedConfig;
   let config = { ...defaultConfig };
   // 尝试加载开源 mcp.config.yaml
   const openPath = path.join(process.cwd(), 'mcp.config.yaml');
   if (fs.existsSync(openPath)) {
-    const yaml = require('js-yaml');
-    const fileConfig = yaml.load(fs.readFileSync(openPath, 'utf8'));
+    const fileConfig = yamlLoad(fs.readFileSync(openPath, 'utf8'));
     config = deepMerge(config, fileConfig);
   }
   // 企业覆盖
   const epPath = resolvePath('configs', 'mcp.enterprise.yaml');
   if (fs.existsSync(epPath)) {
-    const yaml = require('js-yaml');
-    const epConfig = yaml.load(fs.readFileSync(epPath, 'utf8'));
+    const epConfig = yamlLoad(fs.readFileSync(epPath, 'utf8'));
     config = deepMerge(config, epConfig);
   }
   cachedConfig = config;

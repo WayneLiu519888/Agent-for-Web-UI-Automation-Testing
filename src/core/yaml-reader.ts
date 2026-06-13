@@ -6,8 +6,29 @@ import { load as yamlLoad } from 'js-yaml';
 import { resolvePath } from '../utils/paths.js';
 import type { TestCase, EnvironmentConfig, AccTreeDocument, ExecutionPlan } from '../types/yaml.js';
 
+/** YAML 读取异常 */
+class YamlReadError extends Error {
+  constructor(message: string, public readonly filePath: string, public readonly cause?: unknown) {
+    super(`[YAML] ${message} (file: ${filePath})`);
+    this.name = 'YamlReadError';
+  }
+}
+
+function safeRead(filePath: string): any {
+  if (!fs.existsSync(filePath)) {
+    throw new YamlReadError('文件不存在', filePath);
+  }
+  try {
+    return yamlLoad(fs.readFileSync(filePath, 'utf8'));
+  } catch (err) {
+    throw new YamlReadError('YAML 解析失败', filePath, err);
+  }
+}
+
 export function readTestCase(filePath: string): TestCase {
-  const yaml = yamlLoad(fs.readFileSync(resolvePath('test-cases', filePath), 'utf8')) as any;
+  const fullPath = resolvePath('test-cases', filePath);
+  const yaml = safeRead(fullPath);
+  if (!yaml || typeof yaml !== 'object') throw new YamlReadError('无效的测试用例格式', fullPath);
   return {
     id: yaml.id,
     title: yaml.title,
@@ -28,20 +49,25 @@ export function readTestCase(filePath: string): TestCase {
 }
 
 export function readEnvironment(name: string): EnvironmentConfig {
-  const yaml = yamlLoad(fs.readFileSync(resolvePath('environments', `${name}.yaml`), 'utf8')) as any;
+  const fullPath = resolvePath('environments', `${name}.yaml`);
+  const yaml = safeRead(fullPath);
+  if (!yaml || typeof yaml !== 'object') throw new YamlReadError('无效的环境配置格式', fullPath);
   return yaml as EnvironmentConfig;
 }
 
 export function readAccTree(filePath: string): AccTreeDocument {
-  const yaml = yamlLoad(fs.readFileSync(resolvePath('acc-trees', filePath), 'utf8')) as any;
+  const fullPath = resolvePath('acc-trees', filePath);
+  const yaml = safeRead(fullPath);
+  if (!yaml || typeof yaml !== 'object') throw new YamlReadError('无效的 Acc Tree 格式', fullPath);
   return yaml as AccTreeDocument;
 }
 
 export function readExecutionPlan(filePath: string): ExecutionPlan {
-  const yaml = yamlLoad(fs.readFileSync(filePath, 'utf8')) as any;
+  const yaml = safeRead(filePath);
+  if (!yaml || typeof yaml !== 'object') throw new YamlReadError('无效的执行计划格式', filePath);
   return yaml as ExecutionPlan;
 }
 
 export function readYamlRaw(filePath: string): any {
-  return yamlLoad(fs.readFileSync(filePath, 'utf8'));
+  return safeRead(filePath);
 }

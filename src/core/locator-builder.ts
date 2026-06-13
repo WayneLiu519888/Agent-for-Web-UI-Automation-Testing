@@ -39,15 +39,18 @@ export function buildLocators(node: AccTreeNode): Locators {
   // CSS 候选选择器（按优先级排列）
   const cssCandidates: CssLocator[] = [];
 
-  // 优先级 1: ID
+  // 优先级 1: ID（安全转义特殊字符）
   if (d.id) {
-    cssCandidates.push({ selector: '#' + d.id, priority: 1, strategy: 'id', uniqueness: 1, sample: false });
+    // CSS 标识符转义：非字母数字开头或含特殊字符则转义
+    const safe = /^[a-zA-Z_][\w-]*$/.test(d.id) ? d.id : d.id.replace(/([!"#$%&'()*+,./:;<=>?@[\]^`{|}~])/g, '\\$1');
+    cssCandidates.push({ selector: '#' + safe, priority: 1, strategy: 'id', uniqueness: 1, sample: false });
   }
 
-  // 优先级 1: data-testid
+  // 优先级 1: data-testid (转义值中的双引号)
   if (d.attributes.dataTestid) {
+    const safeValue = d.attributes.dataTestid.replace(/"/g, '\\"');
     cssCandidates.push({
-      selector: '[data-testid="' + d.attributes.dataTestid + '"]',
+      selector: '[data-testid="' + safeValue + '"]',
       priority: 1, strategy: 'testid', uniqueness: 1, sample: false,
     });
   }

@@ -95,9 +95,8 @@ export function buildAccTreeNode(
   return node;
 }
 
-export function domCollectScript(): string {
-  return "(() => {const r=[];let i=0;for(const e of document.querySelectorAll('*')){const b=e.getBoundingClientRect();const s=getComputedStyle(e);const v=s.display!=='none'&&s.visibility!=='hidden'&&parseFloat(s.opacity)>0;const dv=[];for(const a of e.attributes){if(a.name.startsWith('data-v-'))dv.push(a.name);}r.push({ref:'e'+(++i),tagName:e.tagName.toLowerCase(),id:e.id||null,className:typeof e.className==='string'?e.className:null,attributes:{dataTestid:e.getAttribute('data-testid')||e.getAttribute('data-test-id'),dataQa:e.getAttribute('data-qa'),dataCy:e.getAttribute('data-cy'),dataVAttrs:dv,href:e.getAttribute('href'),type:e.getAttribute('type'),placeholder:e.getAttribute('placeholder'),name:e.getAttribute('name'),value:e.value||null,title:e.getAttribute('title'),src:e.getAttribute('src'),alt:e.getAttribute('alt'),tabindex:e.getAttribute('tabindex')?parseInt(e.getAttribute('tabindex')):null,autocomplete:e.getAttribute('autocomplete'),min:e.getAttribute('min'),max:e.getAttribute('max'),step:e.getAttribute('step'),maxlength:e.getAttribute('maxlength'),pattern:e.getAttribute('pattern'),accept:e.getAttribute('accept'),multiple:e.hasAttribute('multiple'),ariaLabel:e.getAttribute('aria-label'),ariaExpanded:e.getAttribute('aria-expanded')},boundingBox:b.width>0?{x:b.x,y:b.y,width:b.width,height:b.height}:null,isInViewport:b.top>=0&&b.left>=0&&b.bottom<=innerHeight&&b.right<=innerWidth,isVisible:v,zIndex:s.zIndex!=='auto'?parseInt(s.zIndex):null,innerText:e.innerText?e.innerText.slice(0,200):'',textContent:e.textContent?e.textContent.slice(0,200):'',});}return r;})()";
-}
+// domCollectScript — 统一版本，从 dom-collector.ts 导入
+export { domCollectScript } from './dom-collector.js';
 
 export function createAccTreeDocument(
   url: string, title: string, mode: 'quick' | 'deep',

@@ -82,8 +82,9 @@ export class InteractionInferrer {
       }
     }
 
-    // Step 3: base controls rules
-    for (const rule of this.baseControls) {
+    // Step 3: base controls rules (sorted by priority descending)
+    const sortedRules = [...this.baseControls].sort((a, b) => b.priority - a.priority);
+    for (const rule of sortedRules) {
       if (this.evaluateMatch(node, rule.match)) {
         for (const e of rule.events) events.add(e as InteractionEvent);
         if (rule.conditional_events) {

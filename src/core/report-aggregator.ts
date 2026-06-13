@@ -8,8 +8,12 @@ export class ReportAggregator {
   private results: CaseResult[] = [];
   private startTime: number = Date.now();
   private workerCount: number = 0;
+  private totalExpected: number = 0;
 
-  constructor(workerCount: number) { this.workerCount = workerCount; }
+  constructor(workerCount: number, totalExpected: number) {
+    this.workerCount = workerCount;
+    this.totalExpected = totalExpected;
+  }
 
   addResult(result: CaseResult): void {
     this.results.push(result);
@@ -22,11 +26,11 @@ export class ReportAggregator {
   aggregate(outputDir: string): TestReport {
     const passed = this.results.filter(r => r.status === 'passed').length;
     const failed = this.results.filter(r => r.status === 'failed').length;
-    const skipped = this.results.filter(r => r.status === 'skipped').length;
+    const skipped = this.totalExpected - this.results.length;
     const memUsage = process.memoryUsage();
 
     const report: TestReport = {
-      total: this.results.length,
+      total: this.totalExpected,
       passed, failed, skipped,
       durationMs: Date.now() - this.startTime,
       workersUsed: this.workerCount,
@@ -43,7 +47,7 @@ export class ReportAggregator {
   getRealtimeProgress(): { done: number; total: number; passed: number; failed: number } {
     return {
       done: this.results.length,
-      total: this.results.length, // 需外部设置 totalExpected
+      total: this.totalExpected,
       passed: this.results.filter(r => r.status === 'passed').length,
       failed: this.results.filter(r => r.status === 'failed').length,
     };

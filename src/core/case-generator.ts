@@ -51,19 +51,21 @@ export function convertRowToYaml(
   const environment = get('environment') || defaultEnv || '';
   const account = get('account');
 
-  return `id: "${id}"
-title: "${title}"
-priority: "${priority}"
-environment: "${environment}"
-${account ? 'account: "' + account + '"' : ''}
-${tags ? 'tags: [' + tags.split(/[,，]/).map(t => '"' + t.trim() + '"').join(', ') + ']' : ''}
-preconditions: |
-  ${preconditions.replace(/\n/g, '\n  ')}
-steps: |
-  ${steps.replace(/\n/g, '\n  ')}
-expected: |
-  ${expected.replace(/\n/g, '\n  ')}
-`;
+  // 使用 js-yaml dump 安全序列化，避免特殊字符破坏 YAML
+  const { dump } = require('js-yaml');
+  const obj: Record<string, unknown> = {
+    id, title, priority, environment,
+    preconditions, steps, expected,
+  };
+  if (account) obj.account = account;
+  if (tags) obj.tags = tags.split(/[,，]/).map(t => t.trim()).filter(Boolean);
+
+  return dump(obj, {
+    lineWidth: -1,        // 不自动折行
+    noRefs: true,
+    quotingType: '"',     // 强制双引号保证安全
+    forceQuotes: true,
+  });
 }
 
 export function convertXlsxToYaml(
