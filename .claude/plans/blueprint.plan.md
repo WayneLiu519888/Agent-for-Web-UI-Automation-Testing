@@ -2383,8 +2383,206 @@ git push internal main     # 推企业内部 Git（企业内部自行管理 ente
 9. ~~**组件发现工具**~~ ✅
 10. ~~**信息安全分层设计**~~ ✅ 方案见第十章
 11. ~~**进程级并行架构**~~ ✅ 进程级隔离 + 推理执行分离 + 资源感知调度，方案见第十二章
-12. **events 字段升级** — `string[]` 保持，Phase 2+ 评估
+12. ~~**events 字段升级**~~ ✅ 当前保持 `string[]`，Phase 2+ 评估。**详细扩展方案见第十三章**
 13. **推理-执行分离模式默认值** — 推荐 sprint 模式，是否同意？
+
+
+---
+
+## 十三、events 字段扩展方案（待 Phase 2+ 激活）
+
+### 13.0 当前状态
+
+`interaction.events` 为 `string[]`（即 `InteractionEvent[]`），每个节点示例：
+
+```yaml
+interaction:
+  events: [click, hover, focus, blur, press_key]
+  actionable: true
+```
+
+Agent (LLM) 从步骤文本"点击登录按钮" + events 列表中推理选 `click`，够用。
+
+### 13.1 升级触发条件
+
+满足**任一**条件时激活本扩展方案：
+
+| # | 触发条件 | 信号 |
+|---|---------|------|
+| 1 | Agent 在 20+ 次测试执行中因选错事件导致操作失败 | 事件选择准确率 < 90% |
+| 2 | `web-component-scout` 自动发现的组件事件与人工修正冲突 | 有 `_overrides.yaml` 覆盖但 Agent 未感知 |
+| 3 | 65 种事件在复杂控件上共存，Agent 推理上下文窗口不够 | 单节点 events > 8 个时 LLM 选择错误率上升 |
+| 4 | 多人协作中，测试用例描述的"操作动词"与事件名不匹配频率高 | "填入" vs "fill"、"勾选" vs "check" 映射失败 |
+
+### 13.2 升级目标：从 `string[]` 到 `InteractionEventDetail[]`
+
+```typescript
+// ===== 升级前 (Phase 1) =====
+interface InteractionInfo {
+  events: InteractionEvent[];       // ['click', 'fill', 'hover']
+  // ...
+}
+
+// ===== 升级后 (Phase 2+) =====
+interface InteractionEventDetail {
+  /** 事件名 */
+  event: InteractionEvent;
+
+  /** 推断来源 */
+  source: InteractionEventSource;
+
+  /** 置信度 0-1 */
+  confidence: number;
+
+  /** 推荐操作参数（可选）*/
+  params?: Record<string, unknown>;
+
+  /** 自然语言操作动词映射（帮助 LLM 精确匹配）*/
+  actionVerbs?: string[];
+
+  /** 推荐操作描述（喂给 LLM 的上下文片段）*/
+  description?: string;
+}
+
+type InteractionEventSource =
+  | 'base'          // 来自 dictionaries/base/controls.yaml 通用规则
+  | 'project'       // 来自 dictionaries/projects/{name}/components.yaml 自动发现
+  | 'override'      // 来自 _overrides.yaml 人工覆盖（最高优先级）
+  | 'heuristic';    // 来自启发式推断（组件前缀/class名猜测）
+
+interface InteractionInfo {
+  events: InteractionEventDetail[];
+  // ... 其余字段不变
+}
+```
+
+### 13.3 YAML 示例（升级后）
+
+```yaml
+interaction:
+  events:
+    - event: search_and_select
+      source: override               # ★ 来自人工覆盖，最高优先级
+      confidence: 1.0
+      actionVerbs: [搜索选择, 搜索后选择, search, select]
+      description: 打开下拉框后键入搜索文本，从过滤结果中选择
+
+    - event: open_dropdown
+      source: base                   # 来自 base/controls.yaml combobox-basic 规则
+      confidence: 0.95
+      actionVerbs: [打开下拉, open]
+
+    - event: close_dropdown
+      source: base
+      confidence: 0.95
+
+    - event: select_single
+      source: base
+      confidence: 0.95
+      actionVerbs: [选择, select, 单选]
+
+    - event: focus
+      source: base
+      confidence: 1.0
+
+    - event: blur
+      source: base
+      confidence: 1.0
+  actionable: true
+```
+
+### 13.4 升级涉及的源码修改
+
+| 文件 | 变更 |
+|------|------|
+| `src/types/interaction-events.ts` | 新增 `InteractionEventDetail`、`InteractionEventSource` 类型；`InteractionInfo.events` 改为 `InteractionEventDetail[]` |
+| `src/core/interaction-inferrer.ts` | `infer()` 返回 `InteractionEventDetail[]`；`enrichInteraction()` 附上 source/confidence |
+| `src/core/acc-tree.ts` | `buildAccTreeNode()` 中 interaction 构建适配新结构 |
+| `src/types/yaml.ts` | `InteractionInfo` 导入路径不变，内容自动同步 |
+| `dictionaries/base/controls.yaml` | 可选：每条规则追加 `confidence` 和 `description` 默认值 |
+| `dictionaries/base/events.yaml` | 可选：每个事件追加 `action_verbs` 和 `description` |
+
+### 13.5 source 推断逻辑（升级后 InteractionInferrer.infer）
+
+```typescript
+infer(node: AccTreeNode): InteractionEventDetail[] {
+  const ct = node.framework?.componentType;
+  const results: Map<string, InteractionEventDetail> = new Map();
+
+  // Step 1: _overrides override → source='override', confidence=1.0
+  if (ct && this.overrideComponents.has(ct)) {
+    for (const e of this.overrideComponents.get(ct)!) {
+      results.set(e, { event: e, source: 'override', confidence: 1.0 });
+    }
+    return [...results.values()];
+  }
+
+  // Step 2: project components → source='project', confidence=0.8
+  if (ct && this.projectComponents.has(ct)) {
+    for (const e of this.projectComponents.get(ct)!) {
+      if (!results.has(e)) results.set(e, { event: e, source: 'project', confidence: 0.8 });
+    }
+  }
+
+  // Step 3: base controls → source='base', confidence=0.95
+  for (const rule of this.baseControls) {
+    if (this.evaluateMatch(node, rule.match)) {
+      for (const e of rule.events) {
+        if (!results.has(e)) results.set(e, { event: e, source: 'base', confidence: 0.95 });
+      }
+    }
+  }
+
+  // Step 4: heuristic → source='heuristic', confidence=0.5
+  // (无任何规则命中时，根据 tagName+className 粗粒度猜测)
+
+  return [...results.values()];
+}
+```
+
+### 13.6 Agent Prompt 模板升级（升级后）
+
+```
+当前: "该元素支持的事件: click, hover, fill, focus, blur"
+升级: "该元素支持的操作:
+        • search_and_select (来源:人工覆盖, 置信度:1.0)
+          → 打开下拉框后键入搜索文本，从过滤结果中选择
+        • open_dropdown (来源:base规则, 置信度:0.95)
+        • close_dropdown (来源:base规则, 置信度:0.95)
+        • select_single (来源:base规则, 置信度:0.95)
+
+       请优先使用高置信度且来源为'人工覆盖'或'base规则'的事件。"
+```
+
+### 13.7 升级成本预估
+
+| 维度 | 估算 |
+|------|------|
+| 代码改动 | ~200 行（主要改 interaction-inferrer.ts + types） |
+| YAML 体积增加 | 每个事件的 YAML 从 1 行变为 4-7 行，平均增 3-5 倍 |
+| Agent 推理成本 | 每条用例 prompt 增加约 200-500 tokens |
+| 向后兼容 | 旧 YAML 中 `events: [click, fill]` 需自动迁移为 `events: [{event:click,source:base,confidence:0.9}]` |
+
+### 13.8 降级策略（不想升级时）
+
+如果升级后发现体积膨胀不可接受，可通过 `mcp.config.yaml` 中的紧凑模式降级：
+
+```yaml
+explorer:
+  snapshot_compact: true   # 紧凑模式下 events 回退为 string[]
+```
+
+紧凑模式输出：
+```yaml
+interaction:
+  events: [search_and_select, open_dropdown, close_dropdown]
+  actionable: true
+  # 当 compact=true 时，省略 source/confidence/actionVerbs/description
+```
+
+### 13.9 激活条件
+
+> **当 Agent 实际执行 Web 操作时，事件选择准确率（按 operations 计数）低于 90% 时，启动本扩展方案。**
 
 
 ---
