@@ -583,29 +583,54 @@ hooks:
 
 ---
 
-## 三、工具设计（共 9 个）
+## 三、工具设计（共 5 个）
+
+### 3.0 核心原则：编排层 ≠ 执行层
+
+```
+┌─────────────────────────────────────────┐
+│ Agent-for-Web-UI-Automation-Testing     │  ← 我们（编排层）
+│ web-init / web-explore / executor /     │
+│ case-generator / web-snapshot           │
+│                                         │
+│  职责：环境编排、页面探索工作流、        │
+│        用例→Agent推理、测试报告、       │
+│        Acc Tree增强采集                 │
+└──────────────┬──────────────────────────┘
+               │ 委托底层操作
+               ▼
+┌─────────────────────────────────────────┐
+│ @playwright/mcp  (Playwright MCP)       │  ← 已安装（执行层）
+│ browser_navigate / browser_click /      │
+│ browser_type / browser_fill_form /      │
+│ browser_select_option / browser_hover / │
+│ browser_press_key / browser_wait_for /  │
+│ browser_take_screenshot / browser_snapshot│
+│ browser_tabs / browser_evaluate / ...   │
+│                                         │
+│  职责：原子浏览器操作、DOM交互、截图    │
+└─────────────────────────────────────────┘
+```
+
+**不重复实现**：导航、点击、输入、选择、悬停、按键、等待、截图、标签管理 — 这些 Playwright MCP 已有 23 个工具覆盖，我们全部通过 **MCP 工具间调用**复用。
 
 ### 工具注册矩阵
 
-| 工具名 | Visibility | 说明 |
-|--------|-----------|------|
-| `web-explore` | `all` | 页面探索（核心） |
-| `web-init` | `all` | 初始化测试环境 |
-| `test-case-executor` | `all` | 测试用例执行器（核心） |
-| `case-generator` | `all` | Excel → YAML 用例批量转换 |
-| `web-navigate` | `all` | 底层页面导航 |
-| `web-act` | `all` | 底层页面操作（click/fill/select/hover） |
-| `web-assert` | `all` | 底层页面断言 |
-| `web-snapshot` | `all` | 获取当前页面 acc tree 快照 |
-| `web-state` | `stdio` | 查看浏览器/Context/Page 状态（调试用） |
+| 工具名 | Visibility | 分类 | 说明 |
+|--------|-----------|------|------|
+| `web-init` | `all` | 编排层 | 初始化测试环境 → 自动登录 → 保存登录态 |
+| `web-explore` | `all` | 编排层 | 一键探索页面 → 生成增强版 Acc Tree YAML |
+| `test-case-executor` | `all` | 编排层 | 用例执行：Agent 推理 + 委托 Playwright MCP |
+| `case-generator` | `all` | 数据工具 | Excel → YAML 批量转换 |
+| `web-snapshot` | `all` | 增强工具 | Playwright MCP `browser_snapshot` 增强版（DOM+几何+locator+框架） |
 
 ### 平台兼容设计
 
-所有 `/` 命令在 Claude Code 和 OpenCode 中均通过 MCP 工具 + slash command 机制注册：
+所有 `/` 命令通过 MCP 工具 + slash command 注册：
 
 ```
-Claude Code:  在 CLAUDE.md 或 .claude/settings.json 中声明 mcp server 启动配置
-OpenCode:     在 opencode.json 或 .opencode/settings.json 中声明
+Claude Code:  在 settings.json 中声明 mcp server 启动配置
+OpenCode:     在 opencode.json 中声明
 ```
 
 命令列表：
@@ -614,108 +639,154 @@ OpenCode:     在 opencode.json 或 .opencode/settings.json 中声明
 |------|------|----------|
 | `/web-init` | web-init | `/web-init test-env` |
 | `/web-explore` | web-explore | `/web-explore https://example.com --mode=deep` |
-| `/exec-test` | test-case-executor | `/exec-test TC-LOGIN-001 --parallel=3` |
+| `/exec-test` | test-case-executor | `/exec-test test-cases/login/*.yaml --parallel=3` |
 | `/gen-cases` | case-generator | `/gen-cases test-cases/登录模块.xlsx` |
-| `/snap` | web-snapshot | `/snap` (当前页面快照) |
+| `/snap` | web-snapshot | `/snap` (当前页面增强快照) |
 
 ---
 
-### 2.4 用例生成器：Excel → YAML（tool: `case-generator`）
+### 工具 1：`web-init`（环境初始化器）
 
-#### 2.4.1 设计动机
-
-> 测试团队通常用 Excel 维护用例，不可能手写 YAML。提供一个**Excel→YAML 转换工具**，按列名自动映射到极简 YAML 格式，一键转换整个 xlsx 文件。
-
-#### 2.4.2 Excel 列名映射协议
-
-| Excel 列名（任意一种均可） | 映射到 YAML 字段 | 说明 |
-|---|---|---|
-| `用例ID` / `编号` / `ID` / `Case ID` | `id` | 唯一标识 |
-| `用例标题` / `标题` / `Title` | `title` | 用例名称 |
-| `用例等级` / `优先级` / `等级` / `Priority` / `Level` | `priority` | P0/P1/P2/P3 |
-| `前置条件` / `前提` / `Preconditions` / `Pre-condition` | `preconditions` | 文本段落 |
-| `执行步骤` / `测试步骤` / `步骤` / `Steps` / `Test Steps` | `steps` | 文本段落 |
-| `预期结果` / `期望结果` / `Expected` / `Expected Result` | `expected` | 文本段落 |
-| `标签` / `Tags` / `标签列表` | `tags` | 逗号分隔 |
-| `环境` / `测试环境` / `Environment` / `Env` | `environment` | 环境名 |
-| `账号` / `测试账号` / `Account` | `account` | 账号名 |
-| `备注` / `Remarks` / `Note` | (不映射，跳过) | — |
-
-#### 2.4.3 Excel 示例
-
-| 用例ID | 用例标题 | 用例等级 | 前置条件 | 执行步骤 | 预期结果 | 环境 | 账号 |
-|--------|---------|---------|---------|---------|---------|------|------|
-| TC-LOGIN-001 | 正常登录 | P0 | 浏览器已启动，登录态就绪 | 1. 打开登录页 https://xxx/login
-2. 输入用户名 admin
-3. 输入密码
-4. 点击登录按钮
-5. 等待跳转 | 1. URL 包含 /dashboard
-2. 显示用户名为 admin
-3. 左侧菜单可见 | test-env | admin |
-| TC-LOGIN-002 | 错误密码登录 | P1 | 浏览器已启动 | 1. 打开登录页
-2. 输入用户名 admin
-3. 输入错误密码 wrong
-4. 点击登录 | 1. 页面不跳转
-2. 显示"密码错误"提示 | test-env | admin |
-
-#### 2.4.4 转换产出（一个 Excel 文件 → 多个 YAML 文件）
-
-输入：`test-cases/登录模块.xlsx`
-产出：
 ```
-test-cases/login/
-├── TC-LOGIN-001.yaml
-├── TC-LOGIN-002.yaml
-└── ...
+名称: web-init
+标题: Test Environment Initializer
+描述: |
+  读取环境配置 YAML → 委托 Playwright MCP 启动浏览器 → 自动执行登录流程 → 保存登录态。
+  内部调用 Playwright MCP 的 browser_navigate / browser_type / browser_click 等工具。
+
+输入:
+  - environment (必填): environments/{name}.yaml
+  - account (可选, 默认 "admin"): 使用的账号
+  - headless (可选, 默认 true)
+  - save_state (可选, 默认 true)
+
+内部执行流程:
+  1. 读取 environments/{name}.yaml
+  2. 调用 Playwright MCP browser_navigate → 打开 login_url
+  3. 按 login_flow.steps 依次调用 browser_type / browser_click 等
+  4. 验证 success_indicator → 确认登录成功
+  5. 可选保存 storage_state 到 auth/ 目录
+  6. 返回浏览器就绪状态
+
+输出:
+  - status: "initialized"
+  - storage_state_path: 登录态文件路径
+  - page_title: 当前页面标题
+  - login_success: boolean
 ```
 
-#### 2.4.5 `case-generator` 工具定义
+### 工具 2：`web-explore`（页面探索器）
+
+```
+名称: web-explore
+标题: Web Page Exploration
+描述: |
+  一键探索 Web 页面，产出增强版 Acc Tree YAML。
+  内部流程：
+    Playwright MCP browser_navigate(url) → browser_snapshot() 取 ARIA 树
+    → 本工具 page.evaluate() 补采 DOM 属性/几何/样式/框架信息
+    → 融合生成增强版 Acc Tree YAML → 写入 acc-trees/
+
+输入:
+  - url (必填): 页面 URL
+  - mode (可选, 默认 "quick"): "quick" (单页) | "deep" (递归同域)
+  - max_depth (可选, 默认 2): 深度探索爬取深度
+  - max_pages (可选, 默认 20): 最大页面数
+  - output_dir (可选, 默认 "acc-trees"): YAML 输出目录
+
+输出:
+  - explored_pages: [{url, yaml_path, element_count}]
+  - summary: {total_pages, total_elements, total_links}
+  - errors: [{url, reason}]
+```
+
+### 工具 3：`test-case-executor`（测试用例执行器）
+
+```
+名称: test-case-executor
+标题: Test Case Executor
+描述: |
+  读取极简 YAML 用例 → 运行时获取 Acc Tree → Agent (LLM) 推理执行计划
+  → 委托 Playwright MCP 执行每个操作 → 收集结果 → 生成报告。
+
+  这是本项目最核心的工具——它是"编排者"，Playwright MCP 是它的"手"。
+
+输入:
+  - cases (必填): 用例 YAML 文件路径或 glob 模式
+  - parallel (可选, 默认 1): 并行数（≤ executor.max_parallel）
+  - retry (可选, 默认 0): 失败重试
+  - stop_on_failure (可选, 默认 false): P0 失败是否终止
+
+内部执行循环（每个 Worker）:
+  for each case:
+    1. 解析 YAML → preconditions / steps / expected
+    2. 当前页面 Acc Tree = web-snapshot()
+    3. 将 steps + Acc Tree → LLM → "点击'登录'按钮" → 委托 browser_click
+    4. 每步操作后: 获取新 Acc Tree（委托 browser_snapshot）
+    5. 所有 steps 完成后: LLM 对比 expected → pass/fail
+    6. 失败 → 截图（委托 browser_take_screenshot）
+
+并行隔离: 每 Worker 独立 BrowserContext（共享 Browser 进程），工作窃取调度
+
+输出:
+  - total / passed / failed / skipped
+  - duration_ms
+  - results: [{case_id, status, duration_ms, error, screenshots[]}]
+  - report_path: JSON 报告路径
+```
+
+### 工具 4：`case-generator`（Excel→YAML 转换器）
 
 ```
 名称: case-generator
 标题: Test Case Generator (Excel → YAML)
 描述: |
-  将 Excel 格式的测试用例批量转换为 YAML 格式。
-  自动识别列名（支持中英文多别名），按映射协议转换。
+  将 Excel 格式的测试用例批量转换为极简 YAML 格式。
+  智能列名匹配（支持中英文多别名）。纯数据处理工具，不涉及浏览器。
 visibility: all
 
-输入参数:
-  - source (string, 必填): Excel 文件路径（.xlsx）
-  - output_dir (string, 可选, 默认 "test-cases"): YAML 输出目录
-  - sheet (string, 可选, 默认第一个 sheet): 工作表名
-  - environment (string, 可选): 若 Excel 中无"环境"列，则统一使用此环境
+输入:
+  - source (必填): .xlsx 文件路径
+  - output_dir (可选, 默认 "test-cases"): YAML 输出目录
+  - sheet (可选): 工作表名
+  - environment (可选): 若 Excel 中无"环境"列则统一使用
+
+Excel 列名映射（任一别名匹配即可）:
+  id ← 用例ID/编号/ID/Case ID
+  title ← 用例标题/标题/Title/名称
+  priority ← 用例等级/优先级/Priority/Level
+  preconditions ← 前置条件/前提/Preconditions
+  steps ← 执行步骤/测试步骤/步骤/Steps
+  expected ← 预期结果/期望结果/Expected
+  environment ← 环境/测试环境/Environment/Env
+  account ← 账号/测试账号/Account
 
 输出:
-  - total: 转换的用例数
-  - files: 生成的 YAML 文件路径列表
-  - warnings: 列名不匹配/缺失时的警告
-
-平台命令:
-  Claude Code: /gen-cases <excel_path>
-  OpenCode:    /gen-cases <excel_path>
+  - total: 转换数量
+  - files: [{id, yaml_path}]
+  - warnings: 列名不匹配警告
 ```
 
-#### 2.4.6 列名智能匹配算法
+### 工具 5：`web-snapshot`（增强版 Acc Tree 快照）
 
-```typescript
-const COLUMN_ALIASES: Record<string, string[]> = {
-  id: ['用例ID', '编号', 'ID', 'Case ID', '用例编号', 'case_id', 'case id'],
-  title: ['用例标题', '标题', 'Title', '测试用例标题', '名称', 'Name'],
-  priority: ['用例等级', '优先级', '等级', 'Priority', 'Level', '严重程度'],
-  preconditions: ['前置条件', '前提', 'Preconditions', 'Pre-condition', '前置'],
-  steps: ['执行步骤', '测试步骤', '步骤', 'Steps', 'Test Steps', '操作步骤'],
-  expected: ['预期结果', '期望结果', 'Expected', 'Expected Result', '预期', '验证点'],
-  tags: ['标签', 'Tags', '标签列表', '分类'],
-  environment: ['环境', '测试环境', 'Environment', 'Env', '环境名称'],
-  account: ['账号', '测试账号', 'Account', '登录账号', '用户名'],
-};
-
-// 匹配时 trim + toLowerCase 后比对，任一 alias 匹配即命中
 ```
+名称: web-snapshot
+标题: Enhanced Accessibility Tree Snapshot
+描述: |
+  Playwright MCP browser_snapshot 的增强版。
+  browser_snapshot 仅返回 ARIA 角色树（role/name/ref），
+  本工具在此基础上通过 page.evaluate() 补采：
+    - DOM 属性（tagName/id/className/data-testid/data-v-*/placeholder）
+    - 几何信息（boundingBox/isInViewport/zIndex）
+    - 框架感知（组件前缀/componentType）
+    - 多策略定位器（getByTestId→getByRole→css 降级链）
+  返回完整的增强 Acc Tree 片段。
 
----
+输入:
+  - compact (可选, 默认 false): true 时仅输出 ref+role+actionable+locators(前2级)
 
-### 工具 1：`web-explore`
+输出: YAML 格式的增强 Acc Tree 片段（同 2.1 节 schema）
+```
 
 ```
 输入:
@@ -859,25 +930,48 @@ Agent-for-Web-UI-Automation-Testing/
 │   ├── index.ts
 │   ├── config/     (mcp.config.yaml 加载 + Zod schema)
 │   ├── types/      (tool.ts + yaml.ts)
-│   ├── tools/      (8 个 MCP 工具定义)
-│   ├── core/       (浏览器管理、acc tree、探索器、执行器、YAML 读写)
+│   ├── tools/      (5 个 MCP 工具定义)
+│   ├── core/       (Acc Tree 增强采集、探索器、执行器、YAML 读写)
 │   ├── server/     (McpServer 工厂)
 │   ├── entries/    (stdio.ts + http.ts)
-│   └── utils/      (env 变量替换、日志)
+│   └── utils/      (env 变量替换、日志、Playwright MCP 调用代理)
 │
 ├── screenshots/ / reports/ / traces/ / logs/
 ```
 
 ---
 
-## 六、架构流程
+## 六、架构流程（编排层 → 执行层）
 
 ```
-/web-init        → Browser + Login → 认证就绪
-/web-explore     → Page → Acc Tree → acc-trees/*.yaml
-/test-case-executor → Yaml 解析 → Worker Pool 并行 → 报告
-/web-navigate|act|assert|snapshot  → 底层原子操作
-/web-state       → 调试诊断
+/web-init
+  ├─ 读 environments/{name}.yaml
+  ├─ 委托 Playwright MCP: browser_navigate(login_url)
+  ├─ 委托 Playwright MCP: browser_type / browser_click (登录流程)
+  └─ 保存 storage_state → 就绪
+
+/web-explore
+  ├─ 委托 Playwright MCP: browser_navigate(url)
+  ├─ 委托 Playwright MCP: browser_snapshot() → ARIA 角色树
+  ├─ page.evaluate() → DOM/几何/框架 补采
+  ├─ 融合生成增强 Acc Tree YAML
+  └─ [deep 模式] 遍历 links → 递归
+
+/test-case-executor
+  ├─ 解析 YAML → preconditions / steps / expected
+  ├─ web-snapshot() → 增强 Acc Tree
+  ├─ LLM(steps + Acc Tree) → 操作指令
+  ├─ 委托 Playwright MCP: browser_click / browser_type / ...
+  ├─ 每步后 browser_snapshot() 更新 Acc Tree
+  ├─ LLM(expected + 最终 Acc Tree) → pass/fail
+  └─ 生成 JSON 报告
+
+/case-generator
+  └─ 纯数据: Excel 列名匹配 → YAML 文件
+
+/web-snapshot
+  ├─ 委托 Playwright MCP: browser_snapshot() → ARIA 树
+  └─ page.evaluate() → DOM/几何/框架 补采增强
 ```
 
 ---
@@ -886,11 +980,11 @@ Agent-for-Web-UI-Automation-Testing/
 
 | Phase | 内容 | 核心产出 |
 |-------|------|----------|
-| 1 | 基础能力层 | browser-manager, accessibility, locator-builder |
-| 2 | YAML 体系 | yaml-writer/reader, types/yaml.ts |
+| 1 | 基础能力层 | Acc Tree 增强采集器、Locator 构建器、YAML 读写 |
+| 2 | YAML 类型体系 | types/yaml.ts（全部 Zod schema） |
 | 3 | 探索器 | explorer.ts (quick/deep), explore.tool.ts |
-| 4 | 执行器 | executor.ts (并行调度), executor.tool.ts |
-| 5 | init + 原子工具 + 用例生成 | init.tool.ts, navigate/act/assert/snapshot/state, case-generator.tool.ts |
+| 4 | 执行器 | executor.ts (Agent 推理调度+并行), executor.tool.ts |
+| 5 | init + 快照 + 用例生成 | init.tool.ts, snapshot.tool.ts, case-generator.tool.ts |
 | 6 | 集成 + 文档 | mcp.config.yaml, config loader, README, 示例 |
 
 ---
@@ -899,20 +993,21 @@ Agent-for-Web-UI-Automation-Testing/
 
 | 风险 | 等级 | 缓解 |
 |------|------|------|
-| Playwright MCP API break | 中 | 锁定版本，核心逻辑自研 |
-| 深度探索触发反爬 | 中 | Stealth 模式，可配延迟 |
-| Context 资源耗尽 | 低 | 配置硬上限 max_parallel |
-| YAML 用例维护成本 | 低 | Agent 可直接根据 acc tree 编写用例 |
+| Playwright MCP 命令行接口变更 | 中 | 不在代码层直接调用，通过 MCP 工具间调用（同一 LLM session） |
+| 深度探索触发反爬 | 中 | Stealth 模式，可配请求延迟 + 随机行为 |
+| Context 资源耗尽 | 低 | 配置硬上限 `max_parallel: 4`，单 Browser 可承载数十 Context |
+| YAML 用例维护成本 | 低 | case-generator 从 Excel 自动转换；Agent 可直接根据 acc tree 编写用例 |
+| LLM 推理步骤翻译不准确 | 中 | Acc Tree 提供多策略定位器降级链；失败时截图→LLM 重新推理 |
 
 ---
 
 ## 九、待评审的关键决策
 
-1. ~~**Acc Tree YAML 的 locators 字段** — 存储多种定位策略，还是只存 ref？~~ ✅ 已解决：全量多策略定位器，Agent 降级尝试
-2. ~~**测试用例 YAML 的 acc_tree_ref** — 必须关联 acc tree，还是运行时动态获取？~~ ✅ 已解决：**运行时动态获取**，`acc_tree` 字段改为可选加速缓存
-3. ~~**用例格式复杂性** — 用例步骤用结构化 type/target 还是纯文本？~~ ✅ 已解决：**极简纯文本**，preconditions/steps/expected 均为编号列表段落，Agent 推理翻译为 Web 操作
-4. ~~**Excel→YAML 转换** — 是否需要一个用例生成工具？~~ ✅ 已解决：新增 `case-generator` 工具，智能列名匹配 + 批量转换
-5. **并行隔离粒度** — 同 par_group 共享 Context（快），不同组独立（安全），设计合理？
-6. **`/` 命令注册方式** — Claude Code 和 OpenCode 各自有什么规范？
-7. **🆕 组件交互知识库** — Acc Tree v2 标记了 `componentType`（如 ant-select），是否需要维护 AUI 组件交互策略库？
-8. **🆕 Acc Tree 采集深度** — 默认 viewport 还是全量 DOM？完整 DOM 可能数千节点（建议默认 viewport + 50 元素上限）
+1. ~~**Acc Tree YAML 的 locators 字段**~~ ✅ 已解决：全量多策略定位器
+2. ~~**测试用例 YAML 的 acc_tree_ref**~~ ✅ 已解决：运行时动态获取
+3. ~~**用例格式复杂性**~~ ✅ 已解决：极简纯文本
+4. ~~**Excel→YAML 转换**~~ ✅ 已解决：case-generator
+5. ~~**底层原子工具重复**~~ ✅ 已解决：砍掉 web-navigate/act/assert/state，全部委托 Playwright MCP
+6. **并行隔离粒度** — 同 par_group 共享 Context（快），不同组独立（安全），设计合理？→ **建议合理**
+7. **组件交互知识库** — Acc Tree v2 标记了 componentType（如 ant-select），是否需要维护 AUI 组件交互策略库？→ **建议 Phase 2-3 后根据实际体验决定**
+8. **Acc Tree 采集深度** — 默认 viewport 还是全量 DOM？→ **建议默认 viewport + 50 元素上限**
