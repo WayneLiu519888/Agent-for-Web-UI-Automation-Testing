@@ -816,7 +816,7 @@ hooks:
 
 ---
 
-## 三、工具设计（共 5 个）
+## 三、工具设计（共 6 个）
 
 ### 3.0 核心原则：编排层 ≠ 执行层
 
@@ -1857,10 +1857,6 @@ function enrichInteraction(
 
 ---
 
-## 三、工具设计（共 6 个）
-
-### 3.0 核心原则：编排层 ≠ 执行层
-
 ## 四、全局配置文件
 
 ### `mcp.config.yaml`（项目根目录）
@@ -1982,31 +1978,25 @@ Agent-for-Web-UI-Automation-Testing/
 │   │   ├── tool.ts
 │   │   ├── yaml.ts            # AccTree / TestCase / Environment schema
 │   │   └── interaction-events.ts
-│   ├── tools/                # 6 个 MCP 工具定义
-│   │   ├── registry.ts       # ALL_TOOLS 数组
-│   │   ├── init.tool.ts
-│   │   ├── explore.tool.ts
-│   │   ├── executor.tool.ts
-│   │   ├── case-generator.tool.ts
-│   │   ├── snapshot.tool.ts
-│   │   └── component-scout.tool.ts
-│   ├── core/                 # 核心引擎
-│   │   ├── acc-tree.ts       # Acc Tree 增强采集
-│   │   ├── locator-builder.ts
-│   │   ├── interaction-inferrer.ts
-│   │   ├── explorer.ts            # 页面探索逻辑
-│   │   ├── executor.ts            # 测试执行引擎
-│   │   ├── worker-pool-manager.ts # Worker Pool 管理器
-│   │   ├── worker.js              # Worker 子进程入口
-│   │   ├── task-scheduler.ts      # 任务调度器（优先级队列+工作窃取）
-│   │   ├── resource-detector.ts   # 机器资源检测
-│   │   ├── execution-plan.ts      # ExecutionPlan 类型
+│   ├── tools/                # 6 个 MCP 工具（集中在 registry.ts）
+│   │   ├── index.ts           # re-export ALL_TOOLS
+│   │   └── registry.ts        # 6 个工具完整定义
+│   ├── core/                 # 核心引擎 (15 个文件)
+│   │   ├── acc-tree.ts            # Acc Tree 增强采集
+│   │   ├── case-generator.ts      # Excel→YAML 转换
+│   │   ├── component-analyzer.ts  # 组件分析 (known/unknown)
+│   │   ├── config-generator.ts    # 项目配置生成
+│   │   ├── dom-collector.ts       # DOM 组件签名采集
+│   │   ├── execution-plan.ts      # 执行计划生成
+│   │   ├── explorer.ts            # BFS 页面探索 (quick/deep)
+│   │   ├── interaction-inferrer.ts# 配置驱动事件推断器
+│   │   ├── locator-builder.ts     # 多策略定位器
 │   │   ├── report-aggregator.ts   # 报告聚合器
-│   │   ├── dom-collector.ts  # DOM 采集
-│   │   ├── component-analyzer.ts
-│   │   ├── config-generator.ts
-│   │   ├── yaml-reader.ts
-│   │   └── yaml-writer.ts
+│   │   ├── resource-detector.ts   # 机器资源检测
+│   │   ├── task-scheduler.ts      # 优先级队列+工作窃取
+│   │   ├── worker-pool-manager.ts # Worker Pool 管理器
+│   │   ├── yaml-reader.ts         # YAML 读取
+│   │   └── yaml-writer.ts         # YAML 写入
 │   ├── server/
 │   │   ├── factory.ts        # McpServer 工厂
 │   │   └── index.ts
@@ -2168,17 +2158,7 @@ Agent-for-Web-UI-Automation-Testing/
 
 ## 九、待评审的关键决策
 
-1. ~~**Acc Tree YAML 的 locators 字段**~~ ✅
-2. ~~**测试用例 YAML 的 acc_tree_ref**~~ ✅
-3. ~~**用例格式复杂性**~~ ✅
-4. ~~**Excel→YAML 转换**~~ ✅
-5. ~~**底层原子工具重复**~~ ✅
-6. ~~**Acc Tree 采集深度**~~ ✅ 全量 DOM + 仅保留可见/可交互
-7. ~~**交互事件字典**~~ ✅ 已完成：InteractionEventDictionary → InteractionInferrer（配置驱动），dictionaries/ YAML 体系
-8. ~~**事件字典可配置化**~~ ✅ 已完成：三级优先级（overrides > components > base），声明式 match 语法
-9. ~~**组件发现工具**~~ ✅ 已完成：web-component-scout，交互式探索→生成项目组件配置
-10. **并行隔离粒度** — 同 par_group 共享 Context（快），不同组独立（安全），设计合理？
-11. **events 字段升级** — 当前 `string[]`，Phase 2+ 是否需要 confidence/source 结构？→ 保持简单，Phase 2 后再评估
+> 📋 **已移至第十一章** — 包含全部 13 项决策的最新状态。第九章为历史归档。
 
 
 ---
