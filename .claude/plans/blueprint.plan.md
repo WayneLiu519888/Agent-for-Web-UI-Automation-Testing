@@ -407,142 +407,102 @@ function isActionable(node: AccTreeNode): boolean {
 
 保存在 `test-cases/{category}/{name}.yaml`。
 
+#### 2.2.1 设计理念
+
+> **用例 = 人类语言，执行 = Agent 推理。** 测试人员用自然语言编写前置条件、执行步骤、预期结果；执行器将其和 Acc Tree 一起喂给 Agent，Agent 自主推理要执行哪些 Web 操作。不再需要 ID、不再需要 type、不再需要 target 引用。
+
+#### 2.2.2 极简格式
+
 ```yaml
 # ===== 用例元数据 =====
-case:
-  id: "TC-LOGIN-001"
-  title: "正常登录 — 有效凭据"
-  description: "使用正确的用户名和密码登录系统，验证跳转到首页"
-  priority: "P0"                       # P0 | P1 | P2 | P3
-  tags: ["login", "smoke", "regression"]
-  author: "wayne"
-  created_at: "2026-06-14"
+id: "TC-LOGIN-001"
+title: "正常登录 — 有效凭据"
+priority: "P0"                       # P0 | P1 | P2 | P3
+tags: ["login", "smoke"]
+author: "wayne"
+created_at: "2026-06-14"
 
-# ===== 前置条件 =====
-preconditions:
-  environment: "test-env"              # 引用环境配置名
-  storage_state: "auth/admin.json"     # 可选的复用登录态
+# ===== 环境 & 前置条件 =====
+environment: "test-env"              # 引用 environments/{name}.yaml
+account: "admin"                     # 使用的账号名
+preconditions: |
+  1. 浏览器已启动并初始化 test-env 环境（登录态已就绪）
+  2. Account: admin / ${ENV_ADMIN_PASSWORD}
+  3. 被测页面: https://admin.example.com/login
 
-# ===== 依赖的 Accessibility Tree =====
-acc_tree_ref: "acc-trees/example.com/dashboard.yaml"
+# ===== 执行步骤 =====
+steps: |
+  1. 打开登录页 https://admin.example.com/login
+  2. 在"用户名"输入框填入 admin
+  3. 在"密码"输入框填入密码（从环境变量 TEST_PASSWORD 读取）
+  4. 点击"登录"按钮
+  5. 等待页面跳转到 /dashboard
 
-# ===== 并行执行组 =====
-par_group: "group-1"
+# ===== 预期结果 =====
+expected: |
+  ✓ 页面 URL 包含 /dashboard
+  ✓ 页面标题显示"Dashboard"
+  ✓ 顶部导航栏显示当前用户名"admin"
+  ✓ 左侧菜单可见
 
-# ===== 测试步骤 =====
-steps:
-  - id: 1
-    type: "navigate"
-    description: "打开登录页"
-    url: "https://example.com/login"
-
-  - id: 2
-    type: "fill"
-    description: "输入用户名"
-    # target：三选一
-    #   a) ref 引用 acc tree 节点（运行时从 acc tree 中查找 locators 并尝试）
-    #   b) 内联 Playwright Locator API（无需 acc tree）
-    #   c) ref + fallback 降级链
-    target:
-      ref: "e3"                        # 引用 acc tree 中的 ref（最优：从 acc tree 取其 locators 数组尝试）
-    value: "admin"
-
-  - id: 3
-    type: "fill"
-    description: "输入密码"
-    target:
-      ref: "e4"
-    value: "${env.TEST_PASSWORD}"
-
-  - id: 4
-    type: "click"
-    description: "点击登录按钮"
-    target:
-      ref: "e5"                        # acc tree ref → 运行时按 locators 优先级尝试
-    post_wait: 2000
-
-  - id: 5
-    type: "verify"
-    description: "验证已跳转到首页"
-    target:
-      getByRole: ["heading", { name: "Dashboard" }]
-    expect: "visible"
-    timeout: 5000
-
-  - id: 6
-    type: "screenshot"
-    description: "首页截图存档"
-    filename: "screenshots/login_success.png"
-    full_page: false
-
-# ===== 断言汇总 =====
-assertions:
-  total: 1
-  critical: 1
+# ===== 补充信息（可选）=====
+acc_tree: "acc-trees/admin.example.com/login.yaml"   # 关联 acc tree 加速查找
+par_group: "group-1"                                  # 并行执行组
+retry: 1                                              # 失败重试次数
+screenshot_on: "failure"                              # always | failure | never
 ```
 
-**步骤类型完整清单**：
+#### 2.2.3 字段说明
 
-| type | 说明 | 必需参数 | 可选参数 |
-|------|------|----------|----------|
-| `navigate` | 导航到 URL | `url` | `wait_until` (load/domcontentloaded/networkidle) |
-| `click` | 点击元素 | `target` | `double_click`, `button`, `post_wait` |
-| `fill` | 填充输入框 | `target`, `value` | `clear_first`, `submit` |
-| `select` | 选择下拉选项 | `target`, `values` | — |
-| `hover` | 鼠标悬停 | `target` | — |
-| `press` | 键盘按键 | `key` | `target` |
-| `wait` | 等待条件 | — | `time`, `text`, `text_gone`, `url_contains` |
-| `verify` | 断言验证 | `target`, `expect` | `expect_value`, `timeout` |
-| `screenshot` | 截图 | — | `filename`, `full_page`, `target` |
-| `evaluate` | 执行 JS | `script` | `target` |
-| `call_tool` | 调用其他 Agent 工具 | `tool_name`, `arguments` | — |
+| 字段 | 是否必填 | 说明 |
+|------|:---:|------|
+| `id` | ✅ | 唯一标识符 |
+| `title` | ✅ | 用例标题 |
+| `priority` | ✅ | P0(核心流程)/P1(重要)/P2(一般)/P3(边缘) |
+| `tags` | ❌ | 标签列表，用于筛选运行 |
+| `author` | ❌ | 编写者 |
+| `environment` | ✅ | 引用的环境配置名 |
+| `account` | ❌ | 使用哪个账号（默认 admin） |
+| `preconditions` | ✅ | **纯文本段落**：环境状态、账号信息、URL 等 |
+| `steps` | ✅ | **纯文本段落**：编号列表，每行一个操作描述 |
+| `expected` | ✅ | **纯文本段落**：编号列表，每行一条验收标准 |
+| `acc_tree` | ❌ | 关联的 acc tree 文件路径（加速查找） |
+| `par_group` | ❌ | 并行执行组标识 |
+| `retry` | ❌ | 失败重试次数（不填则继承全局配置） |
+| `screenshot_on` | ❌ | 截图策略 |
 
-**expect 枚举值**：`visible` | `hidden` | `enabled` | `disabled` | `text_eq` | `text_contains` | `value_eq` | `url_eq` | `url_contains` | `count_gt`
-
-**target 定位协议**（与新 Acc Tree 的 `locators` 字段对齐）：
-
-Agent 执行时按以下降级链尝试，第一条成功即止：
+#### 2.2.4 Agent 执行逻辑
 
 ```
-优先级 0 (最高) — Acc Tree ref 引用：
-  从 acc tree YAML 中找到对应 ref 节点，读取其 locators 数组，
-  按 locators 内部的优先级依次尝试（getByTestId → getByRole → getByPlaceholder → getByText → css）
-
-优先级 1 — data-testid 内联:
-  target: { getByTestId: "login-submit" }
-
-优先级 2 — ARIA 角色语义:
-  target: { getByRole: ["button", { name: "登 录" }] }
-
-优先级 3 — placeholder 文本:
-  target: { getByPlaceholder: "请输入密码" }
-
-优先级 4 — label 关联:
-  target: { getByLabel: "用户名" }
-
-优先级 5 — 可见文本:
-  target: { getByText: "登 录" }
-
-优先级 6 — CSS 选择器（最后手段）:
-  target: { css: "button.ant-btn.ant-btn-primary[data-v-7ba5bd90]" }
+1. 读取用例 YAML → 解析 preconditions / steps / expected
+2. 若 environment 有值 → 加载 environments/{name}.yaml 获取 URL、账号、登录配置
+3. 运行时调用 web-snapshot 获取当前页面 Acc Tree
+4. 将 preconditions + steps + Acc Tree 文本喂给 LLM：
+   "你是一个 Web 自动化助手。这是当前页面的 Accessibility Tree 结构：
+    {acc_tree_text}
+    
+    请执行以下测试步骤，返回每一步的操作指令（action + locator）：
+    {steps_text}"
+5. LLM 返回操作指令 → 执行器按指令调用 Playwright 底层 API
+6. 每步操作后自动获取新 Acc Tree，传给 LLM 做下一步推理
+7. 所有步骤完成后，LLM 对比 expected 文本 → 判定 pass/fail
 ```
 
-```yaml
-# 示例 1：ref 引用（推荐 — 从探索的 acc tree 中读取）
-target:
-  ref: "e5"
+#### 2.2.5 执行器内部的 target 定位协议（隐含，用例不暴露）
 
-# 示例 2：内联定位器（无需 acc tree）
-target:
-  getByRole: ["button", { name: "提交" }]
+> **此协议内置于执行器，测试用例编写者无需关心。** 执行器将 LLM 输出的操作指令映射为 Playwright 定位：
 
-# 示例 3：降级链（ref 过期时自动 fallback）
-target:
-  ref: "e5"
-  fallback:
-    - getByTestId: "login-submit"
-    - getByRole: ["button", { name: "登 录" }]
-    - css: ".ant-btn-primary"
+```
+LLM 输出: "点击'登录'按钮"
+       ↓
+执行器在 Acc Tree 中搜索 name="登 录" 且 role="button" 的节点
+       ↓
+读取该节点的 locators 数组
+       ↓
+按优先级尝试: getByTestId → getByRole → getByPlaceholder → getByText → css
+       ↓
+第一条成功 → 执行操作 → 返回新 Acc Tree
+全部失败 → 降级到 LLM 重新推理（换一种描述方式）
 ```
 
 ---
@@ -623,7 +583,7 @@ hooks:
 
 ---
 
-## 三、工具设计（共 8 个）
+## 三、工具设计（共 9 个）
 
 ### 工具注册矩阵
 
@@ -632,6 +592,7 @@ hooks:
 | `web-explore` | `all` | 页面探索（核心） |
 | `web-init` | `all` | 初始化测试环境 |
 | `test-case-executor` | `all` | 测试用例执行器（核心） |
+| `case-generator` | `all` | Excel → YAML 用例批量转换 |
 | `web-navigate` | `all` | 底层页面导航 |
 | `web-act` | `all` | 底层页面操作（click/fill/select/hover） |
 | `web-assert` | `all` | 底层页面断言 |
@@ -654,7 +615,103 @@ OpenCode:     在 opencode.json 或 .opencode/settings.json 中声明
 | `/web-init` | web-init | `/web-init test-env` |
 | `/web-explore` | web-explore | `/web-explore https://example.com --mode=deep` |
 | `/exec-test` | test-case-executor | `/exec-test TC-LOGIN-001 --parallel=3` |
+| `/gen-cases` | case-generator | `/gen-cases test-cases/登录模块.xlsx` |
 | `/snap` | web-snapshot | `/snap` (当前页面快照) |
+
+---
+
+### 2.4 用例生成器：Excel → YAML（tool: `case-generator`）
+
+#### 2.4.1 设计动机
+
+> 测试团队通常用 Excel 维护用例，不可能手写 YAML。提供一个**Excel→YAML 转换工具**，按列名自动映射到极简 YAML 格式，一键转换整个 xlsx 文件。
+
+#### 2.4.2 Excel 列名映射协议
+
+| Excel 列名（任意一种均可） | 映射到 YAML 字段 | 说明 |
+|---|---|---|
+| `用例ID` / `编号` / `ID` / `Case ID` | `id` | 唯一标识 |
+| `用例标题` / `标题` / `Title` | `title` | 用例名称 |
+| `用例等级` / `优先级` / `等级` / `Priority` / `Level` | `priority` | P0/P1/P2/P3 |
+| `前置条件` / `前提` / `Preconditions` / `Pre-condition` | `preconditions` | 文本段落 |
+| `执行步骤` / `测试步骤` / `步骤` / `Steps` / `Test Steps` | `steps` | 文本段落 |
+| `预期结果` / `期望结果` / `Expected` / `Expected Result` | `expected` | 文本段落 |
+| `标签` / `Tags` / `标签列表` | `tags` | 逗号分隔 |
+| `环境` / `测试环境` / `Environment` / `Env` | `environment` | 环境名 |
+| `账号` / `测试账号` / `Account` | `account` | 账号名 |
+| `备注` / `Remarks` / `Note` | (不映射，跳过) | — |
+
+#### 2.4.3 Excel 示例
+
+| 用例ID | 用例标题 | 用例等级 | 前置条件 | 执行步骤 | 预期结果 | 环境 | 账号 |
+|--------|---------|---------|---------|---------|---------|------|------|
+| TC-LOGIN-001 | 正常登录 | P0 | 浏览器已启动，登录态就绪 | 1. 打开登录页 https://xxx/login
+2. 输入用户名 admin
+3. 输入密码
+4. 点击登录按钮
+5. 等待跳转 | 1. URL 包含 /dashboard
+2. 显示用户名为 admin
+3. 左侧菜单可见 | test-env | admin |
+| TC-LOGIN-002 | 错误密码登录 | P1 | 浏览器已启动 | 1. 打开登录页
+2. 输入用户名 admin
+3. 输入错误密码 wrong
+4. 点击登录 | 1. 页面不跳转
+2. 显示"密码错误"提示 | test-env | admin |
+
+#### 2.4.4 转换产出（一个 Excel 文件 → 多个 YAML 文件）
+
+输入：`test-cases/登录模块.xlsx`
+产出：
+```
+test-cases/login/
+├── TC-LOGIN-001.yaml
+├── TC-LOGIN-002.yaml
+└── ...
+```
+
+#### 2.4.5 `case-generator` 工具定义
+
+```
+名称: case-generator
+标题: Test Case Generator (Excel → YAML)
+描述: |
+  将 Excel 格式的测试用例批量转换为 YAML 格式。
+  自动识别列名（支持中英文多别名），按映射协议转换。
+visibility: all
+
+输入参数:
+  - source (string, 必填): Excel 文件路径（.xlsx）
+  - output_dir (string, 可选, 默认 "test-cases"): YAML 输出目录
+  - sheet (string, 可选, 默认第一个 sheet): 工作表名
+  - environment (string, 可选): 若 Excel 中无"环境"列，则统一使用此环境
+
+输出:
+  - total: 转换的用例数
+  - files: 生成的 YAML 文件路径列表
+  - warnings: 列名不匹配/缺失时的警告
+
+平台命令:
+  Claude Code: /gen-cases <excel_path>
+  OpenCode:    /gen-cases <excel_path>
+```
+
+#### 2.4.6 列名智能匹配算法
+
+```typescript
+const COLUMN_ALIASES: Record<string, string[]> = {
+  id: ['用例ID', '编号', 'ID', 'Case ID', '用例编号', 'case_id', 'case id'],
+  title: ['用例标题', '标题', 'Title', '测试用例标题', '名称', 'Name'],
+  priority: ['用例等级', '优先级', '等级', 'Priority', 'Level', '严重程度'],
+  preconditions: ['前置条件', '前提', 'Preconditions', 'Pre-condition', '前置'],
+  steps: ['执行步骤', '测试步骤', '步骤', 'Steps', 'Test Steps', '操作步骤'],
+  expected: ['预期结果', '期望结果', 'Expected', 'Expected Result', '预期', '验证点'],
+  tags: ['标签', 'Tags', '标签列表', '分类'],
+  environment: ['环境', '测试环境', 'Environment', 'Env', '环境名称'],
+  account: ['账号', '测试账号', 'Account', '登录账号', '用户名'],
+};
+
+// 匹配时 trim + toLowerCase 后比对，任一 alias 匹配即命中
+```
 
 ---
 
@@ -833,7 +890,7 @@ Agent-for-Web-UI-Automation-Testing/
 | 2 | YAML 体系 | yaml-writer/reader, types/yaml.ts |
 | 3 | 探索器 | explorer.ts (quick/deep), explore.tool.ts |
 | 4 | 执行器 | executor.ts (并行调度), executor.tool.ts |
-| 5 | init + 原子工具 | init.tool.ts, navigate/act/assert/snapshot/state |
+| 5 | init + 原子工具 + 用例生成 | init.tool.ts, navigate/act/assert/snapshot/state, case-generator.tool.ts |
 | 6 | 集成 + 文档 | mcp.config.yaml, config loader, README, 示例 |
 
 ---
@@ -851,10 +908,11 @@ Agent-for-Web-UI-Automation-Testing/
 
 ## 九、待评审的关键决策
 
-1. ~~**Acc Tree YAML 的 locators 字段** — 存储多种定位策略，还是只存 ref？~~ ✅ 已解决：存储**全量多策略定位器**（getByTestId → getByRole → getByPlaceholder → getByText → css → xpath），Agent 按优先级降级尝试
-2. **测试用例 YAML 的 acc_tree_ref** — 必须关联 acc tree，还是运行时动态获取？→ **建议默认动态获取**，acc_tree_ref 是可选的加速缓存
-3. **深度探索递归策略** — BFS 全量爬取，还是支持按分类选择性爬取？→ **建议默认全量同域 BFS**，通过 `filter_pattern` + `filter_exclude` 支持过滤
-4. **并行隔离粒度** — 同 par_group 共享 Context（快），不同组独立（安全），设计合理？
-5. **`/` 命令注册方式** — Claude Code 和 OpenCode 各自有什么规范？
-6. **🆕 组件交互知识库** — Acc Tree v2 新增 `framework.componentType` 字段后，是否需要维护一个 AUI 组件库交互策略知识库？例如 Ant Design Vue 的 Select 打开下拉框 → 选项在 body 层级 → 需要用特定 class 定位
-7. **🆕 Acc Tree 采集深度** — 默认采集整个 DOM 还是只采集 viewport 内的可见元素？完整 DOM 可能数千节点导致 YAML 文件过大（建议默认 viewport + 50 元素阈值）
+1. ~~**Acc Tree YAML 的 locators 字段** — 存储多种定位策略，还是只存 ref？~~ ✅ 已解决：全量多策略定位器，Agent 降级尝试
+2. ~~**测试用例 YAML 的 acc_tree_ref** — 必须关联 acc tree，还是运行时动态获取？~~ ✅ 已解决：**运行时动态获取**，`acc_tree` 字段改为可选加速缓存
+3. ~~**用例格式复杂性** — 用例步骤用结构化 type/target 还是纯文本？~~ ✅ 已解决：**极简纯文本**，preconditions/steps/expected 均为编号列表段落，Agent 推理翻译为 Web 操作
+4. ~~**Excel→YAML 转换** — 是否需要一个用例生成工具？~~ ✅ 已解决：新增 `case-generator` 工具，智能列名匹配 + 批量转换
+5. **并行隔离粒度** — 同 par_group 共享 Context（快），不同组独立（安全），设计合理？
+6. **`/` 命令注册方式** — Claude Code 和 OpenCode 各自有什么规范？
+7. **🆕 组件交互知识库** — Acc Tree v2 标记了 `componentType`（如 ant-select），是否需要维护 AUI 组件交互策略库？
+8. **🆕 Acc Tree 采集深度** — 默认 viewport 还是全量 DOM？完整 DOM 可能数千节点（建议默认 viewport + 50 元素上限）
