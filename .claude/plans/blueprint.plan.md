@@ -51,6 +51,15 @@ AccTreeNode {
       src:          string | null    // img src
       alt:          string | null    // img alt
       tabindex:     number | null
+      autocomplete: string | null  // HTML5 autocomplete
+      list:         string | null  // HTML5 list（关联 datalist）
+      min:          string | null  // HTML5 min
+      max:          string | null  // HTML5 max
+      step:         string | null  // HTML5 step
+      maxlength:    string | null  // HTML5 maxlength
+      pattern:      string | null  // HTML5 pattern
+      accept:       string | null  // input[type=file] accept
+      multiple:     boolean | null // multiple 属性
       ariaLabel:    string | null
       ariaExpanded: string | null
     }
@@ -95,9 +104,24 @@ AccTreeNode {
 
   // ========== 交互状态 ==========
   interaction: {
+    events:        string[]         // ★ 该元素支持的所有交互事件类型（见 InteractionEventDictionary）
     actionable:    boolean          // 综合判断：可交互角色 + 可见 + 非 disabled + 有 boundingBox
     scrollNeeded:  boolean          // actionable 但不在视口内
     obscured:      boolean          // 是否被其他元素遮挡
+    currentValue:  string | number | boolean | string[] | null  // 当前取值
+    options:       string[] | null  // 可选值列表（用于 select/combobox）
+    checked:       boolean | "mixed" | null  // 选中状态
+    constraints: {                  // 交互参数约束
+      min:              number | null
+      max:              number | null
+      step:             number | null
+      maxLength:        number | null
+      inputType:        string | null
+      maxSelection:     number | null
+      acceptTypes:      string[] | null
+      allowCustomInput: boolean | null
+      dateFormat:       string | null
+    } | null
   }
 
   // ========== 框架感知 ==========
@@ -257,9 +281,18 @@ tree:
               uniqueness: 1
               sample: true
         interaction:
+          events:
+            - fill
+            - clear
+            - focus
+            - blur
+            - press_key
           actionable: true
           scrollNeeded: false
           obscured: false
+          currentValue: ""
+          constraints:
+            inputType: "text"
         framework:
           detected: "vue"
           componentType: "ant-input"
@@ -349,7 +382,17 @@ tree:
               uniqueness: 1
               sample: true
         interaction:
+          events:
+            - click
+            - hover                    # tooltip
+            - focus
+            - blur
+            - press_key
+            - press_shortcut
           actionable: true
+          scrollNeeded: false
+          obscured: false
+          currentValue: ""
         framework:
           detected: "vue"
           componentType: "ant-btn"
@@ -368,7 +411,8 @@ tree:
 2. page.accessibility.snapshot() → 采集 a11y（role/name/checked/disabled...）
 3. 按 boundingBox + tagName + 层级 对两条树做结构对齐合并
 4. LocationBuilder：为每个元素生成多策略定位器
-5. 标记 actionable（可交互角色 + 可见 + 非 disabled + 有 box）
+5. ★ enrichInteraction(node): 标记 actionable + 推断 interaction.events + 提取 currentValue/options/constraints
+     交互事件推断规则参见 InteractionEventDictionary (src/types/interaction-events.ts)
 6. Framework.detected：扫描 className 中的已知前缀（ant-/el-/n-/arco-/vxe-/a-/t-）
 7. ★ 过滤: 丢弃不可见节点(isVisible=false)和不可交互的纯容器节点
        但保留其 children 中符合条件的节点（树结构不丢）
@@ -388,22 +432,194 @@ YAML 中丢弃的节点:
   ✗ isVisible = true 但 role = generic/none 且无子节点 → 跳过（无用容器）
 ```
 
-#### 2.1.5 actionable 判定规则
+#### 2.1.5 交互事件推断规则（enrichInteraction）
 
 ```typescript
-function isActionable(node: AccTreeNode): boolean {
+/**
+ * 判定元素是否可交互，并推断其支持的交互事件列表
+ * 核心: HTML元素 + ARIA角色 + 组件类型 → InteractionEvent[]
+ */
+function enrichInteraction(node: AccTreeNode): InteractionInfo {
   const interactiveRoles = new Set([
     'button', 'link', 'textbox', 'searchbox', 'combobox',
     'checkbox', 'radio', 'menuitem', 'menuitemcheckbox',
     'menuitemradio', 'option', 'switch', 'tab', 'slider',
-    'spinbutton', 'listbox',
+    'spinbutton', 'listbox', 'gridcell', 'rowheader', 'columnheader',
+    'treeitem',
   ]);
-  if (!interactiveRoles.has(node.a11y.role)) return false;
-  if (!node.geometry.isVisible) return false;
-  if (node.a11y.disabled === true) return false;
-  if (!node.geometry.boundingBox) return false;
-  return true;
+
+  const actionable =
+    interactiveRoles.has(node.a11y.role) &&
+    node.geometry.isVisible === true &&
+    node.a11y.disabled !== true &&
+    node.geometry.boundingBox !== null;
+
+  const events = inferInteractionEvents(node);
+
+  return {
+    events,
+    actionable,
+    scrollNeeded: actionable && !node.geometry.isInViewport,
+    obscured: false,                    // Playwright 实际检测后回填
+    currentValue: extractCurrentValue(node),
+    options: extractOptions(node),
+    checked: node.a11y.checked,
+    constraints: extractConstraints(node),
+  };
 }
+
+/**
+ * 交互事件推断映射表
+ * 根据 HTML 标签 + ARIA 角色 + 组件类型 + DOM属性 推断支持的交互事件
+ */
+function inferInteractionEvents(node: AccTreeNode): InteractionEvent[] {
+  const { tagName, attributes, className } = node.dom;
+  const { role, haspopup } = node.a11y;
+  const ct = node.framework.componentType;
+  const events: Set<InteractionEvent> = new Set();
+
+  // ─── 按钮类 ───
+  if (tagName === 'button' || role === 'button' || tagName === 'a') {
+    events.add('click');
+    events.add('focus').add('blur');
+    if (attributes.title) events.add('hover');          // tooltip
+    if (ct?.includes('dropdown')) events.add('hover');  // hover 触发下拉
+    if (attributes.type === 'submit') events.add('submit_on_enter');
+  }
+
+  // ─── 文本输入类 ───
+  else if (role === 'textbox' || role === 'searchbox') {
+    events.add('fill').add('clear').add('focus').add('blur').add('press_key');
+    if (role === 'searchbox') events.add('type_char_by_char');
+    if (attributes.autocomplete) events.add('autocomplete');
+    if (tagName === 'input' && attributes.type === 'number') {
+      events.add('set_value').add('increment').add('decrement');
+    }
+    if (tagName === 'textarea' || node.a11y.multiline) {
+      events.add('paste');
+    }
+  }
+
+  // ─── 下拉/选择类 ───
+  else if (role === 'combobox' || role === 'listbox' || tagName === 'select') {
+    events.add('open_dropdown').add('close_dropdown').add('select_single').add('focus').add('blur');
+    if (attributes.multiple) events.add('select_multi').add('clear_all').add('deselect');
+    if (ct === 'ant-select' && className?.includes('show-search')) events.add('search_and_select');
+    if (ct === 'ant-cascader') events.add('expand').add('collapse');
+  }
+
+  // ─── 复选框 ───
+  else if (role === 'checkbox') {
+    events.add('check').add('uncheck').add('toggle').add('focus').add('blur').add('press_key');
+  }
+
+  // ─── 单选按钮 ───
+  else if (role === 'radio') {
+    events.add('check').add('toggle').add('focus').add('blur').add('press_key');
+  }
+
+  // ─── 开关 ───
+  else if (role === 'switch') {
+    events.add('turn_on').add('turn_off').add('toggle').add('focus').add('blur');
+  }
+
+  // ─── 滑动条 ───
+  else if (role === 'slider') {
+    events.add('set_value').add('drag_to').add('increment').add('decrement').add('focus').add('blur');
+  }
+  else if (role === 'spinbutton') {
+    events.add('set_value').add('increment').add('decrement').add('focus').add('blur');
+  }
+
+  // ─── 表格列头 ───
+  else if (role === 'columnheader') {
+    events.add('click').add('focus').add('blur');
+    if (className?.includes('column-has-sorters') || className?.includes('ant-table-column-has-sorters'))
+      events.add('sort_by_column');
+    if (className?.includes('column-has-filters') || className?.includes('ant-table-column-has-filters'))
+      events.add('filter_column').add('open_dropdown');
+  }
+
+  // ─── 表格行 ───
+  else if (role === 'row') {
+    events.add('select_row').add('click');
+  }
+
+  // ─── 表格容器 ───
+  else if (role === 'table' || role === 'grid') {
+    events.add('sort_by_column').add('filter_column').add('select_row').add('select_all')
+         .add('paginate').add('resize_column');
+  }
+
+  // ─── 树节点 ───
+  else if (role === 'treeitem') {
+    events.add('expand').add('collapse').add('select_item').add('click');
+  }
+
+  // ─── 菜单项 ───
+  else if (role === 'menuitem' || role === 'menuitemcheckbox' || role === 'menuitemradio') {
+    events.add('click').add('select_item').add('hover').add('focus').add('blur');
+  }
+
+  // ─── 对话框/弹窗 ───
+  else if (role === 'dialog' || role === 'alertdialog') {
+    events.add('dialog_close').add('press_key');  // Esc 关闭
+    if (className?.includes('confirm')) events.add('dialog_confirm').add('dialog_cancel');
+  }
+
+  // ─── 日期/时间选择器（通过 componentType 检测）───
+  if (ct === 'ant-picker' || ct === 'el-date-picker' || ct === 'n-date-picker') {
+    events.add('pick_date').add('focus').add('blur');
+    if (ct?.includes('range') || className?.includes('range'))
+      events.add('pick_range').add('date_clear');
+  }
+
+  // ─── 文件上传 ───
+  if (tagName === 'input' && attributes.type === 'file') {
+    events.add('select_file').add('drag_drop_file').add('remove_file');
+  }
+
+  // ─── 分页器（通过 componentType 检测）───
+  if (ct === 'ant-pagination' || ct === 'el-pagination' || ct === 'n-pagination') {
+    events.add('paginate').add('click');
+    node.interaction!.constraints = {
+      ...node.interaction!.constraints,
+      min: 1,
+      max: extractMaxPage(node),
+      step: 1,
+    };
+  }
+
+  // ─── 通用事件（所有可交互元素）───
+  if (events.size > 0) {
+    events.add('scroll_into_view');
+  }
+
+  return [...events];
+}
+```
+
+**InteractionEvent 完整类型定义**：
+
+```typescript
+type InteractionEvent =
+  | 'click' | 'dblclick' | 'right_click' | 'long_press'
+  | 'hover' | 'hover_tooltip' | 'hover_dropdown'
+  | 'fill' | 'clear' | 'type_char_by_char' | 'paste' | 'submit_on_enter' | 'autocomplete'
+  | 'select_single' | 'select_multi' | 'search_and_select' | 'clear_all' | 'deselect'
+  | 'open_dropdown' | 'close_dropdown' | 'filter_options'
+  | 'check' | 'uncheck' | 'toggle' | 'turn_on' | 'turn_off'
+  | 'set_value' | 'increment' | 'decrement' | 'drag_to'
+  | 'dialog_open' | 'dialog_close' | 'dialog_confirm' | 'dialog_cancel' | 'dialog_dismiss'
+  | 'expand' | 'collapse' | 'select_item' | 'select_row' | 'select_all'
+  | 'sort_by_column' | 'filter_column' | 'resize_column' | 'drag_row' | 'paginate'
+  | 'pick_date' | 'pick_time' | 'pick_range' | 'date_clear' | 'date_today'
+  | 'select_file' | 'drag_drop_file' | 'remove_file'
+  | 'drag_start' | 'drag_end' | 'drop'
+  | 'play' | 'pause' | 'stop' | 'seek' | 'volume' | 'fullscreen'
+  | 'press_key' | 'press_shortcut'
+  | 'focus' | 'blur'
+  | 'scroll_to' | 'scroll_into_view';
 ```
 
 #### 2.1.6 YAML 体积控制
@@ -412,8 +628,8 @@ function isActionable(node: AccTreeNode): boolean {
 
 | 模式 | 输出字段 | 约行数 | 触发参数 |
 |------|---------|--------|----------|
-| **完整** | 所有字段（dom+a11y+geometry+locators+interaction+framework+text） | 300-600 行 | 默认 |
-| **紧凑** | ref + tagName + role + actionable + locators(仅 getByTestId + getByRole) | 40-80 行 | `web-snapshot --compact` |
+| **完整** | 所有字段（dom+a11y+geometry+locators+interaction(全量 events)+framework+text） | 400-800 行 | 默认 |
+| **紧凑** | ref + tagName + role + actionable + events(仅前3个) + locators(仅 getByTestId + getByRole) | 50-100 行 | `web-snapshot --compact` |
 | **调试** | 完整 + rawAttributes（所有 HTML 属性） | 500-1000 行 | `--debug` |
 
 其他控制：`text.innerText` / `text.textContent` 统一截断到 200 字符；`locators.xpath` 仅在无其他有效定位器时生成。
@@ -948,7 +1164,7 @@ Agent-for-Web-UI-Automation-Testing/
 │   ├── config/     (mcp.config.yaml 加载 + Zod schema)
 │   ├── types/      (tool.ts + yaml.ts)
 │   ├── tools/      (5 个 MCP 工具定义)
-│   ├── core/       (Acc Tree 增强采集、探索器、执行器、YAML 读写)
+│   ├── core/       (Acc Tree 增强采集、Locator构建、事件推断、探索器、执行器、YAML 读写)
 │   ├── server/     (McpServer 工厂)
 │   ├── entries/    (stdio.ts + http.ts)
 │   └── utils/      (env 变量替换、日志、Playwright MCP 调用代理)
@@ -997,7 +1213,7 @@ Agent-for-Web-UI-Automation-Testing/
 
 | Phase | 内容 | 核心产出 |
 |-------|------|----------|
-| 1 | 基础能力层 | Acc Tree 增强采集器、Locator 构建器、YAML 读写 |
+| 1 | 基础能力层 | Acc Tree 增强采集器、Locator 构建器、YAML 读写、InteractionEventDictionary 事件推断器 |
 | 2 | YAML 类型体系 | types/yaml.ts（全部 Zod schema） |
 | 3 | 探索器 | explorer.ts (quick/deep), explore.tool.ts |
 | 4 | 执行器 | executor.ts (Agent 推理调度+并行), executor.tool.ts |
@@ -1015,16 +1231,18 @@ Agent-for-Web-UI-Automation-Testing/
 | Context 资源耗尽 | 低 | 配置硬上限 `max_parallel: 4`，单 Browser 可承载数十 Context |
 | YAML 用例维护成本 | 低 | case-generator 从 Excel 自动转换；Agent 可直接根据 acc tree 编写用例 |
 | LLM 推理步骤翻译不准确 | 中 | Acc Tree 提供多策略定位器降级链；失败时截图→LLM 重新推理 |
+| 交互事件推断覆盖不足 | 低 | 新增 AUI 组件时扩展 inferInteractionEvents()；dict 独立文件易于维护 |
 
 ---
 
 ## 九、待评审的关键决策
 
-1. ~~**Acc Tree YAML 的 locators 字段**~~ ✅ 已解决：全量多策略定位器
-2. ~~**测试用例 YAML 的 acc_tree_ref**~~ ✅ 已解决：运行时动态获取
-3. ~~**用例格式复杂性**~~ ✅ 已解决：极简纯文本
-4. ~~**Excel→YAML 转换**~~ ✅ 已解决：case-generator
-5. ~~**底层原子工具重复**~~ ✅ 已解决：砍掉 web-navigate/act/assert/state，全部委托 Playwright MCP
-6. **并行隔离粒度** — 同 par_group 共享 Context（快），不同组独立（安全），设计合理？→ **建议合理**
-7. **组件交互知识库** — Acc Tree v2 标记了 componentType（如 ant-select），是否需要维护 AUI 组件交互策略库？→ **建议 Phase 2-3 后根据实际体验决定**
-8. ~~**Acc Tree 采集深度**~~ ✅ 已解决：**全量 DOM 遍历**（不限于 viewport），但**只保留可见 + 可交互元素**写入 YAML。不可见/纯容器节点跳过，但其 children 中符合条件的子节点保留（树结构不丢）
+1. ~~**Acc Tree YAML 的 locators 字段**~~ ✅
+2. ~~**测试用例 YAML 的 acc_tree_ref**~~ ✅
+3. ~~**用例格式复杂性**~~ ✅
+4. ~~**Excel→YAML 转换**~~ ✅
+5. ~~**底层原子工具重复**~~ ✅
+6. ~~**Acc Tree 采集深度**~~ ✅ 全量 DOM + 仅保留可见/可交互
+7. ~~**交互事件字典**~~ ✅ 已完成：InteractionEventDictionary → events[] 字段 + enrichInteraction() 推断器
+8. **并行隔离粒度** — 同 par_group 共享 Context（快），不同组独立（安全），设计合理？
+9. **组件交互知识库** — Acc Tree v2 标记了 componentType，是否需要 AUI 组件交互策略库？→ Phase 2-3 后决定
