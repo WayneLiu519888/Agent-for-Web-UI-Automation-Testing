@@ -6,125 +6,400 @@
 
 ## 一、总体愿景
 
-不录制、不写脚本。Agent 读取页面 Accessibility Tree → 理解语义结构 → 按 YAML 测试用例自主执行 Web 操作。核心思路是用 **结构化 a11y 语义** 替代传统 XPath/CSS 脚本，用 **Agent 推理** 替代脆弱的录制回放。
+不录制、不写脚本。Agent 读取页面**完整 DOM + Accessibility Tree 融合快照** → 理解语义结构 + CSS 组件脉络 + DOM 属性锚点 → 按 YAML 测试用例自主执行 Web 操作。
+
+核心思路：
+- **DOM + A11y 双重采集**：Playwright `page.accessibility.snapshot()` 给出 ARIA 语义角色，`page.evaluate()` 遍历 DOM 采集标签/class/data-testid/几何/样式
+- **多策略定位器冗余**：每个元素自动生成 getByTestId → getByRole → getByPlaceholder → getByText → CSS → XPath 的降级链
+- **Vue 3 / AUI 组件库感知**：自动识别 Ant Design Vue (ant-)、Element Plus (el-)、Naive UI (n-)、Arco Design (arco-) 等组件前缀，标记组件类型以供 Agent 选择正确的交互策略
 
 ---
 
 ## 二、YAML 数据格式设计（共 3 种）
 
-### 2.1 Accessibility Tree YAML（页面探索产出）
+### 2.1 Acc Tree YAML（页面探索产出 — v2 完整版）
 
 每个 URL 一个独立 YAML 文件，保存在 `acc-trees/{host}/{path-hash}.yaml`。
+
+#### 2.1.1 设计原则
+
+> **采集一切，Agent 按优先级消费。** Acc Tree 不是 UI 截图，也不是单纯的 ARIA 树——它是 **DOM 属性 + ARIA 语义 + 几何信息 + 多策略定位器** 的融合快照。Agent 执行用例时从定位器链中择优尝试，无需回查浏览器。
+
+#### 2.1.2 Acc Tree Node Schema（完整字段）
+
+```
+AccTreeNode {
+  // ========== 标识 ==========
+  ref:           string           // 唯一引用 ID（e1, e2, ...），同次探索内稳定
+
+  // ========== DOM 基础信息 ==========
+  dom: {
+    tagName:     string           // HTML 标签名（小写，如 button / input / div）
+    id:          string | null    // DOM id 属性
+    className:   string | null    // 完整 className（如 "ant-btn ant-btn-primary"）
+    attributes: {                 // 关键 DOM 属性（精选采集）
+      dataTestid:   string | null
+      dataQa:       string | null
+      dataCy:       string | null
+      dataVAttrs:   string[]     // Vue 3 scoped CSS 属性，如 ["data-v-7ba5bd90"]
+      href:         string | null
+      type:         string | null    // input type
+      placeholder:  string | null
+      name:         string | null    // form field name
+      value:        string | null    // 当前值
+      title:        string | null    // tooltip
+      src:          string | null    // img src
+      alt:          string | null    // img alt
+      tabindex:     number | null
+      ariaLabel:    string | null
+      ariaExpanded: string | null
+    }
+  }
+
+  // ========== ARIA Accessibility 信息 ==========
+  a11y: {
+    role:          string           // ARIA 角色：button / textbox / combobox / heading / link ...
+    name:          string           // 无障碍名称（accessible name）
+    level:         number | null    // heading 层级 1-6
+    checked:       boolean | "mixed" | null
+    disabled:      boolean | null
+    expanded:      boolean | null
+    selected:      boolean | null
+    pressed:       boolean | null
+    required:      boolean | null
+    readonly:      boolean | null
+    multiline:     boolean | null
+    haspopup:      string | null    // menu / listbox / tree / grid / dialog
+    roledescription: string | null  // 角色可读描述
+  }
+
+  // ========== 几何与可见性 ==========
+  geometry: {
+    boundingBox:   { x: number, y: number, width: number, height: number } | null
+    isInViewport:  boolean          // 是否在视口内
+    isVisible:     boolean          // display != none && visibility != hidden && opacity > 0
+    zIndex:        number | null    // 层叠顺序
+  }
+
+  // ========== 多策略定位器（降级链）==========
+  // Agent 执行时按以下顺序尝试，第一条成功即止
+  locators: {
+    getByTestId:    string[] | null   // data-testid / data-qa / data-cy 数组
+    getByRole:      [string, object] | null  // 例: ["button", { name: "提交" }]
+    getByLabel:     string | null
+    getByText:      string[] | null   // 完整内嵌文本列表
+    getByPlaceholder: string[] | null
+    css:            CssLocator[] | null  // 候选 CSS 选择器（按优先级排列）
+    xpath:          string | null     // 最后手段
+  }
+
+  // ========== 交互状态 ==========
+  interaction: {
+    actionable:    boolean          // 综合判断：可交互角色 + 可见 + 非 disabled + 有 boundingBox
+    scrollNeeded:  boolean          // actionable 但不在视口内
+    obscured:      boolean          // 是否被其他元素遮挡
+  }
+
+  // ========== 框架感知 ==========
+  framework: {
+    detected:      string | null     // "vue" | "react" | null
+    componentType: string | null     // AUI 组件名：ant-btn / el-input / n-button / arco-menu-item
+    componentPrefix: string | null   // 组件前缀：ant- / el- / n- / arco- / vxe- / a- / t-
+  }
+
+  // ========== 文本内容 ==========
+  text: {
+    innerText:     string | null     // 内部可见文本（截断到 200 字符）
+    textContent:   string | null     // 所有文本节点（截断到 200 字符）
+  }
+
+  // ========== 子节点 ==========
+  children?:      AccTreeNode[]
+}
+```
+
+**CSS 定位器子结构**：
+
+```
+CssLocator {
+  selector:  string     // CSS 选择器字符串
+  priority:  number     // 1(唯一) 2(高) 3(中) 4(低)
+  strategy:  string     // id / testid / data-attr / class-chain / tag-nth / aria
+  uniqueness: number    // 匹配到的元素数量（1 表示唯一定位）
+  sample:    boolean    // true 表示经过实际 page.locator() 验证
+}
+```
+
+#### 2.1.3 完整示例（AUI 登录页）
 
 ```yaml
 # ===== 页面元数据 =====
 page:
-  url: "https://example.com/dashboard"
-  title: "Dashboard - Example"
-  explored_at: "2026-06-14T08:30:00Z"
-  mode: "deep"                        # quick | deep
-  total_elements: 47
-  load_time_ms: 1230
+  url: "https://admin.example.com/login"
+  title: "登录 - 管理后台"
+  explored_at: "2026-06-14T10:00:00Z"
+  mode: "quick"
+  total_elements: 23
+  load_time_ms: 870
+  framework: "vue"                     # 自动检测
+  ui_library: "ant-design-vue"        # 自动检测
 
-# ===== 链接发现（深度探索模式会递归探索这些链接）=====
-links:
-  - text: "用户管理"
-    href: "/admin/users"
-    element_ref: "e15"
-  - text: "系统设置"
-    href: "/admin/settings"
-    element_ref: "e22"
+# ===== 链接发现 =====
+links: []
 
-# ===== Accessibility Tree =====
+# ===== Acc Tree =====
 tree:
-  - role: "banner"
-    name: ""
-    ref: "e1"
+  - ref: "e1"
+    dom:
+      tagName: "div"
+      id: null
+      className: "ant-pro-form-login-container"
+      attributes:
+        dataVAttrs: ["data-v-7ba5bd90"]
+    a11y:
+      role: "generic"
+      name: ""
+    geometry:
+      boundingBox: { x: 0, y: 0, width: 1920, height: 1080 }
+      isInViewport: true
+      isVisible: true
+    locators:
+      css:
+        - selector: "div.ant-pro-form-login-container[data-v-7ba5bd90]"
+          priority: 3
+          strategy: "data-attr"
+          uniqueness: 1
+          sample: true
+    interaction:
+      actionable: false
+    framework:
+      detected: "vue"
+      componentPrefix: "ant-"
+    text:
+      innerText: null
+
     children:
-      - role: "heading"
-        name: "Dashboard"
-        level: 1
-        ref: "e2"
-      - role: "navigation"
-        name: "主导航"
-        ref: "e3"
-        children:
-          - role: "link"
-            name: "首页"
-            ref: "e4"
-            actionable: true
-            locators:
-              getByRole: ["link", { name: "首页" }]
-              getByText: "首页"
-          - role: "link"
-            name: "用户管理"
-            ref: "e5"
-            actionable: true
-            locators:
-              getByRole: ["link", { name: "用户管理" }]
-  - role: "main"
-    name: ""
-    ref: "e6"
-    children:
-      - role: "heading"
-        name: "用户列表"
-        level: 2
-        ref: "e7"
-      - role: "button"
-        name: "新建用户"
-        ref: "e8"
-        actionable: true
+      - ref: "e2"
+        dom:
+          tagName: "h2"
+          id: null
+          className: "ant-pro-form-login-title"
+          attributes:
+            dataVAttrs: ["data-v-7ba5bd90"]
+        a11y:
+          role: "heading"
+          name: "管理后台"
+          level: 2
+        geometry:
+          boundingBox: { x: 860, y: 200, width: 200, height: 36 }
+          isInViewport: true
+          isVisible: true
         locators:
-          getByRole: ["button", { name: "新建用户" }]
-      - role: "table"
-        name: "用户表格"
-        ref: "e9"
-        children:
-          - role: "rowgroup"
-            ref: "e10"
-            children:
-              - role: "row"
-                ref: "e11"
-                children:
-                  - role: "columnheader"
-                    name: "用户名"
-                    ref: "e12"
-                  - role: "columnheader"
-                    name: "邮箱"
-                    ref: "e13"
-                  - role: "columnheader"
-                    name: "操作"
-                    ref: "e14"
-      - role: "row"
-        name: ""
-        ref: "e20"
-        children:
-          - role: "cell"
-            name: "张三"
-            ref: "e21"
-          - role: "cell"
-            name: "zhangsan@example.com"
-            ref: "e22"
-          - role: "button"
-            name: "编辑"
-            ref: "e23"
-            actionable: true
-            locators:
-              getByRole: ["button", { name: "编辑" }]
+          getByRole: ["heading", { name: "管理后台", level: 2 }]
+          getByText: ["管理后台"]
+          css:
+            - selector: "h2.ant-pro-form-login-title"
+              priority: 3
+              strategy: "class-chain"
+              uniqueness: 1
+              sample: true
+        interaction:
+          actionable: false
+        framework:
+          detected: "vue"
+          componentType: "ant-pro-form-login-title"
+          componentPrefix: "ant-"
+        text:
+          innerText: "管理后台"
+
+      - ref: "e3"
+        dom:
+          tagName: "input"
+          id: "username"
+          className: "ant-input ant-input-lg"
+          attributes:
+            dataTestid: "login-username"
+            type: "text"
+            placeholder: "请输入用户名"
+            name: "username"
+            dataVAttrs: ["data-v-7ba5bd90"]
+            tabindex: 1
+        a11y:
+          role: "textbox"
+          name: "用户名"
+          required: true
+          disabled: false
+          readonly: false
+        geometry:
+          boundingBox: { x: 760, y: 320, width: 400, height: 40 }
+          isInViewport: true
+          isVisible: true
+          zIndex: 1
+        locators:
+          getByTestId: ["login-username"]
+          getByRole: ["textbox", { name: "用户名" }]
+          getByPlaceholder: ["请输入用户名"]
+          getByLabel: ["用户名"]
+          css:
+            - selector: "[data-testid=\"login-username\"]"
+              priority: 1
+              strategy: "testid"
+              uniqueness: 1
+              sample: true
+            - selector: "#username"
+              priority: 1
+              strategy: "id"
+              uniqueness: 1
+              sample: true
+            - selector: "input.ant-input.ant-input-lg[data-v-7ba5bd90]"
+              priority: 3
+              strategy: "data-attr"
+              uniqueness: 1
+              sample: true
+        interaction:
+          actionable: true
+          scrollNeeded: false
+          obscured: false
+        framework:
+          detected: "vue"
+          componentType: "ant-input"
+          componentPrefix: "ant-"
+        text:
+          innerText: ""
+
+      - ref: "e4"
+        dom:
+          tagName: "input"
+          id: "password"
+          className: "ant-input ant-input-lg"
+          attributes:
+            dataTestid: "login-password"
+            type: "password"
+            placeholder: "请输入密码"
+            name: "password"
+            dataVAttrs: ["data-v-7ba5bd90"]
+            tabindex: 2
+        a11y:
+          role: "textbox"
+          name: "密码"
+          required: true
+          disabled: false
+          readonly: false
+        geometry:
+          boundingBox: { x: 760, y: 380, width: 400, height: 40 }
+          isInViewport: true
+          isVisible: true
+        locators:
+          getByTestId: ["login-password"]
+          getByRole: ["textbox", { name: "密码" }]
+          getByPlaceholder: ["请输入密码"]
+          getByLabel: ["密码"]
+          css:
+            - selector: "[data-testid=\"login-password\"]"
+              priority: 1
+              strategy: "testid"
+              uniqueness: 1
+              sample: true
+            - selector: "#password"
+              priority: 1
+              strategy: "id"
+              uniqueness: 1
+              sample: true
+        interaction:
+          actionable: true
+        framework:
+          detected: "vue"
+          componentType: "ant-input"
+          componentPrefix: "ant-"
+        text:
+          innerText: ""
+
+      - ref: "e5"
+        dom:
+          tagName: "button"
+          id: null
+          className: "ant-btn ant-btn-primary ant-btn-lg ant-btn-block"
+          attributes:
+            dataTestid: "login-submit"
+            type: "submit"
+            dataVAttrs: ["data-v-7ba5bd90"]
+            tabindex: 3
+        a11y:
+          role: "button"
+          name: "登 录"
+          disabled: false
+          pressed: false
+        geometry:
+          boundingBox: { x: 760, y: 450, width: 400, height: 44 }
+          isInViewport: true
+          isVisible: true
+        locators:
+          getByTestId: ["login-submit"]
+          getByRole: ["button", { name: "登 录" }]
+          getByText: ["登 录"]
+          css:
+            - selector: "[data-testid=\"login-submit\"]"
+              priority: 1
+              strategy: "testid"
+              uniqueness: 1
+              sample: true
+            - selector: "button.ant-btn.ant-btn-primary.ant-btn-lg[data-v-7ba5bd90]"
+              priority: 3
+              strategy: "data-attr"
+              uniqueness: 1
+              sample: true
+        interaction:
+          actionable: true
+        framework:
+          detected: "vue"
+          componentType: "ant-btn"
+          componentPrefix: "ant-"
+        text:
+          innerText: "登 录"
 ```
 
-**字段设计原则**：
+#### 2.1.4 采集算法
 
-| 字段 | 来源 | 说明 |
-|------|------|------|
-| `role` | ARIA `role` | Playwright a11y snapshot 直接产出 |
-| `name` | accessible name | aria-label → 标签文本 → 内部文字 |
-| `ref` | Playwright MCP 格式 | eN 递增编号，Agent 可引用 |
-| `level` | 仅 heading | 标题层级 1-6 |
-| `actionable` | 推导 | role 为 button/link/combobox/textbox/checkbox/radio/menuitem/tab/switch/option 时设为 true |
-| `locators` | 自动生成 | 至少有 getByRole，按优先级补齐 getByLabel、getByText、getByTestId、getByPlaceholder |
-| `checked/disabled/expanded/selected` | a11y 属性 | 状态标记 |
-| `value` | 输入框当前值 | textbox/combobox 的当前内容 |
+```
+Acc Tree 采集 = DOM 遍历（DFS）⊕ ARIA snapshot（DFS）→ 按位置+结构合并
+
+步骤：
+1. page.evaluate() 遍历 DOM → 采集 dom / geometry / text
+2. page.accessibility.snapshot() → 采集 a11y（role/name/checked/disabled...）
+3. 按 boundingBox + tagName + 层级 对两条树做结构对齐合并
+4. LocationBuilder：为每个元素生成多策略定位器
+5. 标记 actionable（可交互角色 + 可见 + 非 disabled + 有 box）
+6. Framework.detected：扫描 className 中的已知前缀（ant-/el-/n-/arco-/vxe-/a-/t-）
+7. 序列化为 YAML 写入磁盘
+```
+
+#### 2.1.5 actionable 判定规则
+
+```typescript
+function isActionable(node: AccTreeNode): boolean {
+  const interactiveRoles = new Set([
+    'button', 'link', 'textbox', 'searchbox', 'combobox',
+    'checkbox', 'radio', 'menuitem', 'menuitemcheckbox',
+    'menuitemradio', 'option', 'switch', 'tab', 'slider',
+    'spinbutton', 'listbox',
+  ]);
+  if (!interactiveRoles.has(node.a11y.role)) return false;
+  if (!node.geometry.isVisible) return false;
+  if (node.a11y.disabled === true) return false;
+  if (!node.geometry.boundingBox) return false;
+  return true;
+}
+```
+
+#### 2.1.6 YAML 体积控制
+
+| 模式 | 输出内容 | 约行数/50元素 | 触发参数 |
+|------|---------|-------------|----------|
+| **完整** | 所有字段 | 400-600 行 | 默认 |
+| **紧凑** | ref + tagName + role + actionable + locators(仅 getByTestId + getByRole) | 60-80 行 | `web-snapshot --compact` |
+| **调试** | 完整 + rawAttributes | 700-900 行 | `--debug` |
+
+其他控制：`text.innerText` / `text.textContent` 截断到 200 字符；`locators.xpath` 仅无其他有效定位器时生成。
 
 ---
 
@@ -164,26 +439,26 @@ steps:
   - id: 2
     type: "fill"
     description: "输入用户名"
+    # target：三选一
+    #   a) ref 引用 acc tree 节点（运行时从 acc tree 中查找 locators 并尝试）
+    #   b) 内联 Playwright Locator API（无需 acc tree）
+    #   c) ref + fallback 降级链
     target:
-      ref: "e12"                       # 引用 acc tree 中的 ref
-      fallback:
-        - getByRole: ["textbox", { name: "用户名" }]
-        - getByPlaceholder: "请输入用户名"
-        - getByLabel: "用户名"
+      ref: "e3"                        # 引用 acc tree 中的 ref（最优：从 acc tree 取其 locators 数组尝试）
     value: "admin"
 
   - id: 3
     type: "fill"
     description: "输入密码"
     target:
-      getByRole: ["textbox", { name: "密码" }]
+      ref: "e4"
     value: "${env.TEST_PASSWORD}"
 
   - id: 4
     type: "click"
     description: "点击登录按钮"
     target:
-      getByRole: ["button", { name: "登录" }]
+      ref: "e5"                        # acc tree ref → 运行时按 locators 优先级尝试
     post_wait: 2000
 
   - id: 5
@@ -224,24 +499,50 @@ assertions:
 
 **expect 枚举值**：`visible` | `hidden` | `enabled` | `disabled` | `text_eq` | `text_contains` | `value_eq` | `url_eq` | `url_contains` | `count_gt`
 
-**target 定位协议**：
+**target 定位协议**（与新 Acc Tree 的 `locators` 字段对齐）：
+
+Agent 执行时按以下降级链尝试，第一条成功即止：
+
+```
+优先级 0 (最高) — Acc Tree ref 引用：
+  从 acc tree YAML 中找到对应 ref 节点，读取其 locators 数组，
+  按 locators 内部的优先级依次尝试（getByTestId → getByRole → getByPlaceholder → getByText → css）
+
+优先级 1 — data-testid 内联:
+  target: { getByTestId: "login-submit" }
+
+优先级 2 — ARIA 角色语义:
+  target: { getByRole: ["button", { name: "登 录" }] }
+
+优先级 3 — placeholder 文本:
+  target: { getByPlaceholder: "请输入密码" }
+
+优先级 4 — label 关联:
+  target: { getByLabel: "用户名" }
+
+优先级 5 — 可见文本:
+  target: { getByText: "登 录" }
+
+优先级 6 — CSS 选择器（最后手段）:
+  target: { css: "button.ant-btn.ant-btn-primary[data-v-7ba5bd90]" }
+```
 
 ```yaml
-# 方式 1：引用 acc tree ref
+# 示例 1：ref 引用（推荐 — 从探索的 acc tree 中读取）
 target:
-  ref: "e12"
+  ref: "e5"
 
-# 方式 2：Playwright Locator API 语义
+# 示例 2：内联定位器（无需 acc tree）
 target:
   getByRole: ["button", { name: "提交" }]
 
-# 方式 3：降级链
+# 示例 3：降级链（ref 过期时自动 fallback）
 target:
-  ref: "e12"
+  ref: "e5"
   fallback:
-    - getByRole: ["textbox", { name: "用户名" }]
-    - getByPlaceholder: "请输入用户名"
-    - css: "#username"
+    - getByTestId: "login-submit"
+    - getByRole: ["button", { name: "登 录" }]
+    - css: ".ant-btn-primary"
 ```
 
 ---
@@ -550,8 +851,10 @@ Agent-for-Web-UI-Automation-Testing/
 
 ## 九、待评审的关键决策
 
-1. **Acc Tree YAML 的 locators 字段** — 存储多种定位策略，还是只存 ref？
-2. **测试用例 YAML 的 acc_tree_ref** — 必须关联 acc tree，还是运行时动态获取？
-3. **深度探索递归策略** — BFS 全量爬取，还是支持按分类选择性爬取？
-4. **并行隔离粒度** — 同 par_group 共享 Context（快），不同组独立（安全），是否合理？
+1. ~~**Acc Tree YAML 的 locators 字段** — 存储多种定位策略，还是只存 ref？~~ ✅ 已解决：存储**全量多策略定位器**（getByTestId → getByRole → getByPlaceholder → getByText → css → xpath），Agent 按优先级降级尝试
+2. **测试用例 YAML 的 acc_tree_ref** — 必须关联 acc tree，还是运行时动态获取？→ **建议默认动态获取**，acc_tree_ref 是可选的加速缓存
+3. **深度探索递归策略** — BFS 全量爬取，还是支持按分类选择性爬取？→ **建议默认全量同域 BFS**，通过 `filter_pattern` + `filter_exclude` 支持过滤
+4. **并行隔离粒度** — 同 par_group 共享 Context（快），不同组独立（安全），设计合理？
 5. **`/` 命令注册方式** — Claude Code 和 OpenCode 各自有什么规范？
+6. **🆕 组件交互知识库** — Acc Tree v2 新增 `framework.componentType` 字段后，是否需要维护一个 AUI 组件库交互策略知识库？例如 Ant Design Vue 的 Select 打开下拉框 → 选项在 body 层级 → 需要用特定 class 定位
+7. **🆕 Acc Tree 采集深度** — 默认采集整个 DOM 还是只采集 viewport 内的可见元素？完整 DOM 可能数千节点导致 YAML 文件过大（建议默认 viewport + 50 元素阈值）
