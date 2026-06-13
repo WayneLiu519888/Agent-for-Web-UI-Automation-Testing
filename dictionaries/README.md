@@ -1,17 +1,26 @@
 # 交互事件字典体系
 
+## 层级归属
+
+| 路径 | 层级 | Git | 说明 |
+|------|------|:---:|------|
+| `base/` | **能力层** | ✅ 提交 | 通用交互事件 + 控件规则，随版本发布 |
+| `schemas/` | **能力层** | ✅ 提交 | JSON Schema 校验文件 |
+| `README.md` | **能力层** | ✅ 提交 | 字典体系说明 |
+| `projects/` | **企业运行时层** | ❌ .gitignore | 项目组件字典，`web-component-scout` 自动生成 |
+
 ## 目录结构
 ```
 dictionaries/
 ├── README.md
-├── base/                  # 基础字典（提交 git）
-│   ├── events.yaml        # 60+ 交互事件注册表
-│   └── controls.yaml      # 声明式 match 规则引擎
-├── projects/              # 项目字典（.gitignore）
+├── base/                  # 能力层（提交 git）
+│   ├── events.yaml        # 65 种交互事件注册表
+│   └── controls.yaml      # 20+ 声明式 match 规则
+├── projects/              # 企业运行时层（.gitignore）
 │   └── {project-name}/
-│       ├── components.yaml
-│       └── _overrides.yaml
-└── schemas/               # JSON Schema 校验
+│       ├── components.yaml    # web-component-scout 自动生成
+│       └── _overrides.yaml    # 人工修正（最高优先级）
+└── schemas/               # 能力层（提交 git）
 ```
 
 ## 三级优先级
