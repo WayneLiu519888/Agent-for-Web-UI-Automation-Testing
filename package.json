@@ -1,0 +1,47 @@
+{
+  "name": "agent-for-web-ui-testing",
+  "version": "0.1.0",
+  "description": "基于 MCP 协议的 Web UI 自动化测试 MCP Server，支持 Stdio 和 HTTP 双传输模式",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "webui-test-mcp": "dist/entries/stdio.js",
+    "webui-test-mcp-http": "dist/entries/http.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start:stdio": "node dist/entries/stdio.js",
+    "start:http": "node dist/entries/http.js",
+    "dev:stdio": "tsx src/entries/stdio.ts",
+    "dev:http": "tsx src/entries/http.ts",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "files": [
+    "dist/"
+  ],
+  "keywords": [
+    "mcp",
+    "web-ui",
+    "automation",
+    "testing",
+    "model-context-protocol"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/server": "2.0.0-alpha.2",
+    "@modelcontextprotocol/node": "2.0.0-alpha.2",
+    "@modelcontextprotocol/express": "2.0.0-alpha.2",
+    "express": "^5.2.0",
+    "zod": "^4.2.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^25.0.0",
+    "tsx": "^4.22.0",
+    "typescript": "^6.0.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
