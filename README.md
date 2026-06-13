@@ -40,7 +40,7 @@
 <tr><td>了解能做什么</td><td><a href="#-核心概念">🧠 核心概念</a></td></tr>
 <tr><td>看有哪些工具可用</td><td><a href="#️-6-个-mcp-工具">🛠️ 6 个 MCP 工具</a></td></tr>
 <tr><td>配置 Claude Desktop</td><td><a href="#-安装方式">📥 安装方式</a></td></tr>
-<tr><td>看完整的 2400+ 行设计蓝图</td><td><a href=".claude/plans/blueprint.plan.md">📐 blueprint.plan.md</a></td></tr>
+<tr><td>看完整的 2500+ 行设计蓝图</td><td><a href=".claude/plans/blueprint.plan.md">📐 blueprint.plan.md</a></td></tr>
 </table>
 </details>
 
@@ -52,7 +52,7 @@
 <tr><th width="15%">分类</th><th width="55%">内容</th><th width="10%">文件数</th></tr>
 <tr><td>🧠 <strong>核心引擎</strong></td><td>Acc Tree 采集、交互事件推断、多策略定位器、YAML 读写</td><td align="center">15 个</td></tr>
 <tr><td>🛠️ <strong>MCP 工具</strong></td><td>init / explore / executor / generator / snapshot / scout</td><td align="center">6 个</td></tr>
-<tr><td>📖 <strong>字典体系</strong></td><td>65 种交互事件 + 20+ 声明式 match 规则</td><td align="center">3 个 YAML</td></tr>
+<tr><td>📖 <strong>字典体系</strong></td><td>65 种交互事件 + 20+ 声明式 match 规则</td><td align="center">2 个 YAML（base/）+ 项目级 YAML 由 web-component-scout 动态生成</td></tr>
 <tr><td>🔒 <strong>安全分层</strong></td><td>开源层(提交 GitHub) ↔ 企业机密层(.gitignore)</td><td align="center">双层</td></tr>
 <tr><td>🚀 <strong>并行引擎</strong></td><td>推理-执行分离 + 进程级 Worker Pool + 资源感知调度</td><td align="center">4 个核心</td></tr>
 </table>
@@ -76,7 +76,7 @@
                    │ 委托底层浏览器操作
                    ▼
 ┌──────────────────────────────────────────────┐
-│  @playwright/mcp — 执行层 — 23 个工具         │
+│  @playwright/mcp — 执行层 — 22 个工具         │
 │  navigate / click / type / fill_form /       │
 │  select / hover / snapshot / screenshot / ... │
 └──────────────────────────────────────────────┘
@@ -319,7 +319,7 @@ Agent-for-Web-UI-Automation-Testing/
 │   ├── acc-trees/               #   探索产物
 │   └── auth/                    #   登录态
 │
-└── .claude/plans/blueprint.plan.md  # 完整蓝图(2400+ 行)
+└── .claude/plans/blueprint.plan.md  # 完整蓝图(2500+ 行)
 ```
 
 ---
@@ -454,7 +454,7 @@ Apache-2.0
 ---
 
 <p align="center">
-  <sub>设计蓝图完整版 → <a href="https://github.com/WayneLiu519888/Agent-for-Web-UI-Automation-Testing/blob/main/.claude/plans/blueprint.plan.md">blueprint.plan.md</a> (2400+ 行)</sub>
+  <sub>设计蓝图完整版 → <a href="https://github.com/WayneLiu519888/Agent-for-Web-UI-Automation-Testing/blob/main/.claude/plans/blueprint.plan.md">blueprint.plan.md</a> (2500+ 行)</sub>
 </p>
 
 <p align="center">

@@ -34,7 +34,7 @@
 | 了解能做什么 | [🧠 核心概念](#-核心概念) |
 | 看有哪些工具可用 | [🛠️ 6 个 MCP 工具](#️-6-个-mcp-工具) |
 | 配置 Claude Desktop | [📥 安装方式](#-安装方式) |
-| 看完整的 2400+ 行设计蓝图 | [`.claude/plans/blueprint.plan.md`](.claude/plans/blueprint.plan.md) |
+| 看完整的 2500+ 行设计蓝图 | [`.claude/plans/blueprint.plan.md`](.claude/plans/blueprint.plan.md) |
 </details>
 
 ---
@@ -273,7 +273,7 @@ Agent-for-Web-UI-Automation-Testing/
 │   ├── acc-trees/               #   探索产物
 │   └── auth/                    #   登录态
 │
-└── .claude/plans/blueprint.plan.md  # 完整蓝图(2400+ 行)
+└── .claude/plans/blueprint.plan.md  # 完整蓝图(2500+ 行)
 ```
 
 ---
@@ -408,7 +408,7 @@ Apache-2.0
 ---
 
 <p align="center">
-  <sub>设计蓝图完整版 → <a href="https://github.com/WayneLiu519888/Agent-for-Web-UI-Automation-Testing/blob/main/.claude/plans/blueprint.plan.md">blueprint.plan.md</a> (2400+ 行)</sub>
+  <sub>设计蓝图完整版 → <a href="https://github.com/WayneLiu519888/Agent-for-Web-UI-Automation-Testing/blob/main/.claude/plans/blueprint.plan.md">blueprint.plan.md</a> (2500+ 行)</sub>
 </p>
 
 <p align="center">
