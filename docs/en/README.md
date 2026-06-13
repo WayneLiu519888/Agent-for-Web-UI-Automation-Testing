@@ -96,8 +96,26 @@ npm install && npx playwright-core install chromium && npm run build
 | Enhanced snapshot | `/snap` | `web-snapshot` |
 | Discover components | `/scout my-app --url=URL` | `web-component-scout` |
 
+### Multi-Platform Command Registration
+
+All 6 tools auto-register across 3 AI coding frameworks:
+
+| Platform | Directory | Files |
+|:---|:---|:---:|
+| Claude Code | `.claude/commands/` | 6 |
+| OpenCode | `.opencode/commands/` | 6 |
+| Codex | `.codex/skills/<name>/SKILL.md` | 6 |
+
 ## Security
 
 Open Source Layer (`src/`) → GitHub ✅ | Enterprise Layer (`enterprise/`) → .gitignore ❌
+
+## Requirements
+
+| Dependency | Version |
+|:---|:---|
+| Node.js | >= 20.0.0 |
+| @playwright/mcp | 0.0.76 |
+| playwright-core | 1.60.0 |
 
 Apache-2.0 | [Claude Code](https://claude.com/claude-code)

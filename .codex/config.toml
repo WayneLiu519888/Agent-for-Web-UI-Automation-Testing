@@ -1,0 +1,8 @@
+# Codex Configuration — Agent-for-Web-UI-Automation-Testing
+
+[mcp.agent-for-web-ui-testing]
+command = "node"
+args = ["dist/entries/stdio.js"]
+
+[skills]
+paths = [".codex/skills"]

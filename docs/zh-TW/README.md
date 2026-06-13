@@ -108,6 +108,16 @@ npm run build
 
 ---
 
+### 多平台命令註冊
+
+所有命令透過以下目錄自動註冊：
+
+| 平台 | 命令目錄 | 數量 |
+|:---|:---|:---:|
+| Claude Code | `.claude/commands/` | 6 |
+| OpenCode | `.opencode/commands/` | 6 |
+| Codex | `.codex/skills/<name>/SKILL.md` | 6 |
+
 ## 🔒 資訊安全
 
 ```

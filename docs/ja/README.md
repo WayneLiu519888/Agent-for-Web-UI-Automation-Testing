@@ -98,6 +98,16 @@ npm run build
 
 ---
 
+### マルチプラットフォームコマンド
+
+全6ツールが3つのAIコーディングフレームワークに自動登録：
+
+| プラットフォーム | ディレクトリ | 数 |
+|:---|:---|:---:|
+| Claude Code | `.claude/commands/` | 6 |
+| OpenCode | `.opencode/commands/` | 6 |
+| Codex | `.codex/skills/<name>/SKILL.md` | 6 |
+
 ## 🔒 セキュリティ階層
 
 ```
