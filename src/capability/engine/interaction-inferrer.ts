@@ -34,7 +34,7 @@ export class InteractionInferrer {
     try {
       const raw = yamlLoad(fs.readFileSync(path.join(baseDir, 'controls.yaml'), 'utf8')) as any;
       if (raw?.rules) this.baseControls = raw.rules;
-    } catch { /* base dict not critical */ }
+    } catch (err: unknown) { console.warn('[InteractionInferrer] 基础控件字典加载失败:', (err as Error)?.message || err); }
   }
 
   private loadProjectDict(projectDir: string) {
@@ -62,7 +62,7 @@ export class InteractionInferrer {
           this.removeEvents.set(r.component, new Set(r.events));
         }
       }
-    } catch { /* project dict optional */ }
+    } catch (err: unknown) { console.warn('[InteractionInferrer] 项目字典加载失败:', (err as Error)?.message || err); }
   }
 
   infer(node: AccTreeNode): InteractionEvent[] {

@@ -38,28 +38,26 @@ async function main() {
   const apiKey = process.env.MCP_API_KEY;
 
   // MCP Streamable HTTP 端点
-  // 若设置了 MCP_API_KEY，则附加 Bearer Token 认证中间件
   // 使用 stateless 模式：每次请求创建新的 transport 实例
+  // 若设置了 MCP_API_KEY，则附加 Bearer Token 认证中间件
+  //
+  // 抽取公共请求处理逻辑为 handleMcpRequest，避免认证/无认证分支代码重复
+
+  const handleMcpRequest = async (req: Request, res: Response) => {
+    const transport = new NodeStreamableHTTPServerTransport({
+      sessionIdGenerator: undefined,
+    });
+    await mcpServer.connect(transport);
+    res.on('close', () => transport.close());
+    await transport.handleRequest(req, res, req.body);
+  };
+
   if (apiKey) {
-    console.error('[MCP HTTP] 已启用 Bearer Token 认证');
-    app.post('/mcp', authMiddleware(apiKey), async (req, res) => {
-      const transport = new NodeStreamableHTTPServerTransport({
-        sessionIdGenerator: undefined,
-      });
-      await mcpServer.connect(transport);
-      res.on('close', () => transport.close());
-      await transport.handleRequest(req, res, req.body);
-    });
+    console.log('[MCP HTTP] 已启用 Bearer Token 认证');
+    app.post('/mcp', authMiddleware(apiKey), handleMcpRequest);
   } else {
-    console.error('[MCP HTTP] ⚠️  未设置 MCP_API_KEY，/mcp 端点无认证保护');
-    app.post('/mcp', async (req, res) => {
-      const transport = new NodeStreamableHTTPServerTransport({
-        sessionIdGenerator: undefined,
-      });
-      await mcpServer.connect(transport);
-      res.on('close', () => transport.close());
-      await transport.handleRequest(req, res, req.body);
-    });
+    console.warn('[MCP HTTP] 未设置 MCP_API_KEY，/mcp 端点无认证保护');
+    app.post('/mcp', handleMcpRequest);
   }
 
   // 健康检查端点（无需认证）
@@ -71,8 +69,8 @@ async function main() {
   const port = parseInt(process.env.PORT || '3000', 10);
 
   app.listen(port, host, () => {
-    console.error(`[MCP HTTP] 服务已启动 → http://${host}:${port}/mcp`);
-    console.error(`[MCP HTTP] 健康检查 → http://${host}:${port}/health`);
+    console.log(`[MCP HTTP] 服务已启动 → http://${host}:${port}/mcp`);
+    console.log(`[MCP HTTP] 健康检查 → http://${host}:${port}/health`);
   });
 }
 

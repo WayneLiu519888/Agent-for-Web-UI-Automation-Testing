@@ -52,7 +52,7 @@ export function createMcpServer(transportType: TransportType): McpServer {
     registeredCount++;
   }
 
-  console.error(
+  console.log(
     `[MCP] 传输模式=${transportType} | 注册工具=${registeredCount} | 跳过工具=${skippedCount}`,
   );
 

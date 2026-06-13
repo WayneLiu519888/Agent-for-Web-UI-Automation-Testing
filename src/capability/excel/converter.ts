@@ -4,8 +4,9 @@
  */
 import * as path from 'node:path';
 import * as fs from 'node:fs';
+import { dump } from 'js-yaml';
 
-const COLUMN_ALIASES: Record<string, string[]> = {
+export const COLUMN_ALIASES: Record<string, string[]> = {
   id: ['用例ID', '编号', 'ID', 'Case ID', '用例编号', 'case_id'],
   title: ['用例标题', '标题', 'Title', '测试用例标题', '名称', 'Name'],
   priority: ['用例等级', '优先级', '等级', 'Priority', 'Level', '严重程度'],
@@ -51,8 +52,7 @@ export function convertRowToYaml(
   const environment = get('environment') || defaultEnv || '';
   const account = get('account');
 
-  // 使用 js-yaml dump 安全序列化，避免特殊字符破坏 YAML
-  const { dump } = require('js-yaml');
+  // 使用 js-yaml dump 安全序列化，避免特殊字符破坏 YAML（ESM 静态导入）
   const obj: Record<string, unknown> = {
     id, title, priority, environment,
     preconditions, steps, expected,
@@ -68,15 +68,21 @@ export function convertRowToYaml(
   });
 }
 
-export function convertXlsxToYaml(
+export async function convertXlsxToYaml(
   sourcePath: string,
   outputDir: string,
   sheetName?: string,
   defaultEnv?: string,
-): { total: number; files: string[]; warnings: string[] } {
-  // 依赖 xlsx 包动态加载
+): Promise<{ total: number; files: string[]; warnings: string[] }> {
+  // 使用 ESM 动态 import() 加载 xlsx，保持防御性兜底
   let XLSX: any;
-  try { XLSX = require('xlsx'); } catch { return { total: 0, files: [], warnings: ['xlsx package not installed'] }; }
+  try {
+    const xlsxMod = await import('xlsx');
+    // CJS interop: esModuleInterop 不影响运行时动态 import，需手动处理
+    XLSX = (xlsxMod as any).default ?? xlsxMod;
+  } catch {
+    return { total: 0, files: [], warnings: ['xlsx package not installed'] };
+  }
 
   const workbook = XLSX.readFile(sourcePath);
   const sheet = sheetName ? workbook.Sheets[sheetName] : workbook.Sheets[workbook.SheetNames[0]];

@@ -22,27 +22,32 @@
 ## 关键设计决策
 1. **编排层≠执行层** — 不重复实现 Playwright 浏览器操作，全部委托 Playwright MCP
 2. **推理-执行分离** — Phase1(LLM批量规划)→Phase2(Worker Pool并行执行,零LLM)→Phase3(按需补救)
-3. **进程级并行** — 每个 Worker = 独立 Node.js 子进程 + 独立 Chromium，用尽机器 CPU/内存
+3. **进程级并行** — 每个 Worker = 独立 Node.js 子进程 + 独立 Chromium，用尽机器 CPU/内存；parGroup 亲和性调度避免同组认证任务分散到多个 Worker
 4. **Acc Tree 8维融合** — DOM+A11y+Geometry+Locators+Interaction+Framework+Text+Children
 5. **信息安全双层** — src/ 开源层→GitHub ✅ / enterprise/ 企业机密层→.gitignore ❌
 6. **交互事件字典三级** — _overrides.yaml(人工) > components.yaml(自动) > base/controls.yaml(默认)
+7. **纯 ESM 无 require()** — 项目 package.json `"type":"module"`，`require()` 在 ESM 模块中不可用会导致运行时崩溃。动态加载必须使用 `await import()`，静态加载使用顶部 `import`。CJS 互操作需手动处理 `(mod as any).default ?? mod`
 
 ## 目录结构
 ```
 src/
-├── types/          # tool.ts / interaction-events.ts / yaml.ts
-├── config/loader.ts  # 双层配置加载 (mcp.config.yaml + mcp.enterprise.yaml)
-├── utils/paths.ts   # 双层路径解析 (企业覆盖优先)
-├── core/           # 15 个核心引擎文件
-│   ├── acc-tree.ts / interaction-inferrer.ts / locator-builder.ts
-│   ├── explorer.ts / execution-plan.ts
-│   ├── worker-pool-manager.ts / task-scheduler.ts / resource-detector.ts / report-aggregator.ts
-│   ├── yaml-reader.ts / yaml-writer.ts
-│   ├── dom-collector.ts / component-analyzer.ts / config-generator.ts
-│   └── case-generator.ts
-├── tools/registry.ts  # 6 个 MCP 工具注册 (集中模式)
-├── server/factory.ts  # McpServer 工厂 (按 transport 过滤工具)
-└── entries/stdio.ts + http.ts  # 双入口
+├── types/              # tool.ts / interaction-events.ts / yaml.ts
+├── utils/paths.ts       # 双层路径解析 (企业覆盖优先)
+├── server/factory.ts    # McpServer 工厂 (按 transport 过滤工具)
+├── entries/stdio.ts + http.ts  # 双入口
+└── capability/          # 两层架构重构后的能力层
+    ├── engine/          # 9 个核心引擎文件
+    │   ├── acc-tree.ts  / interaction-inferrer.ts  / locator-builder.ts
+    │   ├── explorer.ts  / execution-plan.ts
+    │   ├── worker-pool-manager.ts / task-scheduler.ts / resource-detector.ts
+    │   └── dom-collector.ts
+    ├── playwright/      # Playwright 封装适配 (pw-tools.ts 合并封装 + adapter.ts 接口)
+    ├── yaml/            # YAML 读写工具 (reader.ts + writer.ts)
+    ├── excel/           # Excel 转换工具 (parser.ts + converter.ts)
+    ├── config/          # 配置加载工具 (loader.ts + generator.ts)
+    ├── report/          # 报告生成工具 (aggregator.ts + writer.ts)
+    ├── analysis/        # 组件分析 (component-analyzer.ts + component-scout.ts)
+    └── tools/           # MCP 工具注册 (registry.ts + index.ts)
 ```
 
 ## 常用命令

@@ -8,15 +8,15 @@ import { generateReport } from '../config/generator.js';
 import { writeComponentsYaml } from '../yaml/writer.js';
 
 export async function startScoutSession(project: string, baseUrl: string) {
-  // TODO: 委托 Playwright MCP browser_navigate(baseUrl) — Chromium (非headless)
+  // TODO(v2.0): 委托 Playwright MCP browser_navigate(baseUrl) — Chromium (非headless)
   // 启动页面变化监听器 (URL变化+DOM突变+3s轮询)
   return { project, baseUrl, startedAt: Date.now(), active: true };
 }
 export function collectPageComponents() {
-  // TODO: page.evaluate() → 遍历DOM → 提取组件签名
+  // TODO(v2.0): page.evaluate() → 遍历DOM → 提取组件签名
   return { samples: [], pageUrl: '' };
 }
 export async function stopScoutSession(session: any) {
-  // TODO: 汇总所有采集 → 对照base字典 → 生成 components.yaml + discovery_report
+  // TODO(v2.0): 汇总所有采集 → 对照base字典 → 生成 components.yaml + discovery_report
   return { session, durationSec: Math.floor((Date.now()-session.startedAt)/1000) };
 }

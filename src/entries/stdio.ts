@@ -19,7 +19,7 @@ async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
 
-  console.error('[MCP Stdio] 服务已启动，等待客户端连接...');
+  console.log('[MCP Stdio] 服务已启动，等待客户端连接...');
 }
 
 main().catch((err) => {

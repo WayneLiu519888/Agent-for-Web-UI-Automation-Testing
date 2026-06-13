@@ -51,15 +51,15 @@ export class WorkerPoolManager extends EventEmitter {
     this.resourceTimer = setInterval(() => this.checkResources(), 5000);
     this.heartbeatTimer = setInterval(() => this.dispatchAll(), 1000);
 
-    console.error('[WorkerPool] 启动完成 — 活跃Worker=' + this.workers.size + ' 最大=' + this.maxWorkers);
+    console.log('[WorkerPool] 启动完成 — 活跃Worker=' + this.workers.size + ' 最大=' + this.maxWorkers);
   }
 
   private async spawnWorker(): Promise<string> {
     const id = 'w-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
     this.workers.set(id, { id, status: 'idle', currentTaskId: null, crashCount: 0 });
-    // 实际实现: child_process.fork('src/core/worker.js', [], { env: { WORKER_ID: id } })
+    // 实际实现: child_process.fork('src/capability/engine/worker.js', [], { env: { WORKER_ID: id } })
     // IPC: child.on('message', msg => handleWorkerMessage(id, msg))
-    console.error('[WorkerPool] Worker ' + id + ' spawned (placeholder — real fork in Phase 4 complete)');
+    console.log('[WorkerPool] Worker ' + id + ' spawned (placeholder — real fork in Phase 4 complete)');
     this.emit('worker:spawned', id);
     return id;
   }
@@ -93,7 +93,7 @@ export class WorkerPoolManager extends EventEmitter {
   handleWorkerComplete(workerId: string, taskId: string, status: 'passed' | 'failed'): void {
     const w = this.workers.get(workerId);
     if (w) { w.status = 'idle'; w.currentTaskId = null; }
-    this.scheduler.markCompleted(taskId);
+    this.scheduler.markCompleted(taskId, workerId);
     this.emit('task:completed', { workerId, taskId, status });
   }
 

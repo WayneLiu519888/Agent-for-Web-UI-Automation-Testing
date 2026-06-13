@@ -1,3 +1,5 @@
+import type { ZodType } from 'zod';
+
 /**
  * 工具暴露范围类型
  * - all:    在 Stdio 和 HTTP 两种传输模式下均可见
@@ -18,11 +20,11 @@ export interface ToolDefinition {
   /** 工具描述（会暴露给 LLM，帮助模型理解工具用途） */
   description: string;
   /** Zod 输入参数 schema（与 MCP SDK 的 StandardSchemaWithJSON 兼容） */
-  inputSchema: any;
+  inputSchema: ZodType;
   /** 暴露范围 */
   visibility: ToolVisibility;
   /** 工具执行回调函数（匹配 MCP SDK 的 ToolCallback 签名） */
-  handler: any;
+  handler: (args: unknown, extra?: unknown) => Promise<{ content: Array<{ type: string; text?: string; [key: string]: unknown }> }>;
 }
 
 /**

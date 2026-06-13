@@ -3,6 +3,7 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { load as yamlLoad } from 'js-yaml';
 import { resolvePath } from '../../utils/paths.js';
 
 export interface McpConfig {
@@ -86,7 +87,6 @@ function deepMerge(base: any, override: any): any {
 
 let cachedConfig: McpConfig | null = null;
 
-import { load as yamlLoad } from 'js-yaml';
 
 export function loadConfig(): McpConfig {
   if (cachedConfig) return cachedConfig;

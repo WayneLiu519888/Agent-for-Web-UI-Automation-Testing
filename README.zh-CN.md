@@ -240,31 +240,28 @@ Agent-for-Web-UI-Automation-Testing/
 │   └── projects/                #   项目字典 — .gitignore
 │
 ├── src/
-│   ├── core/                    # ★ 15 个核心引擎文件
-│   │   ├── acc-tree.ts          #     Acc Tree 增强采集
-│   │   ├── interaction-inferrer.ts  # 配置驱动事件推断
-│   │   ├── locator-builder.ts   #     多策略定位器
-│   │   ├── explorer.ts          #     BFS 页面探索
-│   │   ├── worker-pool-manager.ts   # 进程级 Worker Pool
-│   │   ├── task-scheduler.ts    #     优先级队列 + 工作窃取
-│   │   ├── resource-detector.ts #     机器资源检测
-│   │   ├── yaml-reader.ts       #     YAML 读取
-│   │   ├── yaml-writer.ts       #     YAML 写入
-│   │   ├── execution-plan.ts    #     执行计划生成
-│   │   ├── report-aggregator.ts #     报告聚合
-│   │   ├── case-generator.ts    #     Excel→YAML
-│   │   ├── dom-collector.ts     #     DOM 采集
-│   │   ├── component-analyzer.ts#     组件分析
-│   │   └── config-generator.ts  #     项目配置生成
-│   ├── types/                   #   类型定义
-│   │   ├── tool.ts
-│   │   ├── interaction-events.ts
-│   │   └── yaml.ts
-│   ├── tools/registry.ts        #   6 个 MCP 工具注册
-│   ├── server/factory.ts        #   McpServer 工厂
-│   ├── config/loader.ts         #   双层配置加载
-│   ├── utils/paths.ts           #   双层路径解析
-│   └── entries/stdio.ts + http.ts
+│   ├── types/                   #   类型定义 (tool.ts / interaction-events.ts / yaml.ts)
+│   ├── utils/paths.ts           #   双层路径解析（企业覆盖优先）
+│   ├── server/factory.ts        #   McpServer 工厂（按 transport 过滤工具）
+│   ├── entries/stdio.ts + http.ts  # 双入口
+│   └── capability/              #   能力层 — 两层架构重构
+│       ├── engine/              #   9 个核心引擎文件
+│       │   ├── acc-tree.ts      #     Acc Tree 增强采集
+│       │   ├── interaction-inferrer.ts  # 配置驱动事件推断
+│       │   ├── locator-builder.ts       # 多策略定位器
+│       │   ├── explorer.ts      #     BFS 页面探索
+│       │   ├── execution-plan.ts#     执行计划生成
+│       │   ├── worker-pool-manager.ts   # 进程级 Worker Pool
+│       │   ├── task-scheduler.ts        # 优先级队列 + 工作窃取
+│       │   ├── resource-detector.ts     # 机器资源检测
+│       │   └── dom-collector.ts         # DOM 采集
+│       ├── playwright/          #   Playwright 封装 (pw-tools.ts + adapter.ts)
+│       ├── yaml/                #   YAML 读写 (reader.ts + writer.ts)
+│       ├── excel/               #   Excel 转换 (parser.ts + converter.ts)
+│       ├── config/              #   配置加载 (loader.ts + generator.ts)
+│       ├── report/              #   报告生成 (aggregator.ts + writer.ts)
+│       ├── analysis/            #   组件分析 (component-analyzer.ts + component-scout.ts)
+│       └── tools/               #   MCP 工具注册 (registry.ts + index.ts)
 │
 ├── enterprise/                  # ★ 企业机密层 — .gitignore 整目录
 │   ├── configs/mcp.enterprise.yaml
