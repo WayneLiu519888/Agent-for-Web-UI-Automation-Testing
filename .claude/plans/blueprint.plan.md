@@ -936,38 +936,91 @@ OpenCode:     在 opencode.json 中声明
   - errors: [{url, reason}]
 ```
 
-### 工具 3：`test-case-executor`（测试用例执行器）
+### 工具 3：`test-case-executor`（测试用例执行器 — 进程级并行）
 
 ```
 名称: test-case-executor
-标题: Test Case Executor
+标题: Test Case Executor (Worker Pool + 推理执行分离)
 描述: |
-  读取极简 YAML 用例 → 运行时获取 Acc Tree → Agent (LLM) 推理执行计划
-  → 委托 Playwright MCP 执行每个操作 → 收集结果 → 生成报告。
+  读取极简 YAML 用例 → 推理-执行分离三阶段 → 进程级并行执行 → 报告聚合。
 
-  这是本项目最核心的工具——它是"编排者"，Playwright MCP 是它的"手"。
+  这是本项目最核心的工具——它是"编排者"，通过 Worker Pool 把机器 CPU/内存用尽，
+  最大化并行度，解决测试人员"无法同时操作多个浏览器"的效率瓶颈。
 
 输入:
   - cases (必填): 用例 YAML 文件路径或 glob 模式
-  - parallel (可选, 默认 1): 并行数（≤ executor.max_parallel）
-  - retry (可选, 默认 0): 失败重试
+  - parallel (可选, 默认 "auto"): "auto"(自动检测) | number(固定值) | "serial"(串行)
+  - plan_mode (可选, 默认 "sprint"): "sprint" | "strict" | "hybrid"
+  - retry (可选, 默认 0): 失败重试次数
   - stop_on_failure (可选, 默认 false): P0 失败是否终止
 
-内部执行循环（每个 Worker）:
-  for each case:
-    1. 解析 YAML → preconditions / steps / expected
-    2. 当前页面 Acc Tree = web-snapshot()
-    3. 将 steps + Acc Tree → LLM → "点击'登录'按钮" → 委托 browser_click
-    4. 每步操作后: 获取新 Acc Tree（委托 browser_snapshot）
-    5. 所有 steps 完成后: LLM 对比 expected → pass/fail
-    6. 失败 → 截图（委托 browser_take_screenshot）
+===== 推理-执行分离三阶段 =====
 
-并行隔离: 每 Worker 独立 BrowserContext（共享 Browser 进程），工作窃取调度
+Phase 1 — 批量推理 (主进程, LLM 单线程):
+  for each case (并发 ≤ llm_max_concurrency):
+    1. 解析 YAML → preconditions / steps / expected
+    2. 若有关联 Acc Tree → 加载
+    3. LLM 推理 → 生成 ExecutionPlan (含每一步的 action + locators[] + wait_after + value)
+    4. ExecutionPlan 存入计划队列
+  该阶段限流: llm_max_concurrency=4, 每条超时 60s
+
+Phase 2 — 并行执行 (Worker Pool, 无 LLM):
+  Worker Pool Manager:
+    - 自动检测 CPU/内存 → 确定 max_workers
+    - 每个 Worker = 独立 Node.js 子进程 (child_process.fork)
+    - 每个 Worker = 独立 Playwright 实例 + 独立 Chromium 进程
+    - ★ 20 条用例 → 20 个 Chromium 进程 → 用尽机器资源
+    - 工作窃取: 空闲 Worker 从繁忙 Worker 队列末尾拉取任务
+  
+  Worker 执行循环 (纯 Playwright API, 不调 LLM):
+    for each step in executionPlan:
+      1. 按 locators 优先级链尝试定位元素
+      2. 执行操作 (click/fill/select/...)
+      3. 截图/collection trace (按配置)
+      4. 操作失败 → 尝试下一个 locator → 全部失败 → 记录错误
+    → 返回 {case_id, status, duration_ms, error, screenshots[], trace_path}
+
+Phase 3 — 按需补救 (主进程, LLM 调度):
+  for each failed_case:
+    1. 将错误截图 + 失败步骤前的 Acc Tree → LLM
+    2. LLM 重新推理 → 生成纠正后的 ExecutionPlan
+    3. 分配到空闲 Worker 重试
+    4. 重试仍失败 → 标记 FAILED
+
+===== plan_mode 对比 =====
+| 模式      | Phase 1 行为                    | 需要 Acc Tree? | 适用场景        |
+|-----------|--------------------------------|:---:|---------------|
+| sprint    | LLM快速规划→Phase2执行→Phase3补救 | 可选 | 先锋探索,无AccTree |
+| strict    | 必须有AccTree,严格验证→Phase2执行  | 必须 | 回归测试       |
+| hybrid    | 有AccTree的严格,无AccTree的冲刺   | 混合 | 默认推荐       |
+
+===== Worker Pool 架构 =====
+
+Worker 状态机:
+  idle → assigned → running → completed | failed | crashed
+                              ↓
+                         completed → idle (接下一任务)
+
+资源感知调度:
+  - 启动时 detectResources(): CPU核心+内存 → 推荐 max_workers
+  - 运行时 runtimeCheck(): 每分钟检测内存/CPU → 动态调整
+  - 内存 < 1GB → 暂停分配新任务, 标记 draining
+  - CPU > 85% → 暂停扩容
+  - crash ≥ 3 次 → 降低 max_workers
+
+渐进式启动:
+  避免 20 个 Chromium 同时启动导致 I/O 风暴
+  → 每 800ms 启动一个 Worker
+
+报告聚合:
+  - Worker 完成→IPC 回传结果→主进程收集
+  - 实时进度 WebSocket 推送
+  - 最终: JSON 报告 + 汇总统计
 
 输出:
   - total / passed / failed / skipped
-  - duration_ms
-  - results: [{case_id, status, duration_ms, error, screenshots[]}]
+  - duration_ms, workers_used, peak_memory_mb
+  - results: [{case_id, status, duration_ms, phase, error, screenshots[]}]
   - report_path: JSON 报告路径
 ```
 
@@ -1834,8 +1887,34 @@ explorer:
   # 采集策略: 全量DOM遍历 → 仅保留 isVisible=true 且 actionable/语义角色 的元素
 
 executor:
-  max_parallel: 4                    # 硬上限
-  default_parallel: 1
+  # ===== 推理-执行分离 =====
+  plan_mode: "sprint"                  # sprint | strict | hybrid
+  llm_max_concurrency: 4               # Phase 1 LLM 最大并发（避免 rate limit）
+  batch_size: 10                       # 批量推理批次大小
+  plan_timeout_ms: 60000               # 单条用例推理超时
+
+  # ===== Worker Pool（进程级并行）=====
+  worker_pool:
+    max_workers: "auto"                # "auto" | number (自动检测 CPU/内存)
+    min_workers: 1
+    initial_workers: "auto"            # auto=min(4, max_workers)
+    spawn_interval_ms: 800            # 渐进式启动间隔（防 I/O 风暴）
+    resource_check:
+      enabled: true
+      interval_ms: 5000
+      memory_low_watermark_mb: 1024
+      memory_high_watermark_mb: 2048
+    lifecycle:
+      heartbeat_interval_ms: 3000
+      heartbeat_timeout_ms: 15000
+      max_consecutive_crashes: 3
+      crash_backoff_base_ms: 5000
+      restart_after_n_tasks: 10        # 防 Chromium 内存泄漏
+      task_timeout_ms: 120000
+    work_stealing: true
+    group_affinity: "soft"             # soft | hard | off
+
+  # ===== 执行层 =====
   retry: 1
   stop_on_critical_failure: true
   action_timeout: 10000
@@ -1843,6 +1922,12 @@ executor:
   expect_timeout: 5000
   screenshot_on_failure: true
   trace_on_failure: true
+  per_worker_request_delay_ms: 100     # 防服务器限流
+
+  # ===== 报告 =====
+  report:
+    realtime_progress: true
+    aggregate_timeout_ms: 300000
 
 paths:
   environments: "environments"
@@ -1909,8 +1994,14 @@ Agent-for-Web-UI-Automation-Testing/
 │   │   ├── acc-tree.ts       # Acc Tree 增强采集
 │   │   ├── locator-builder.ts
 │   │   ├── interaction-inferrer.ts
-│   │   ├── explorer.ts       # 页面探索逻辑
-│   │   ├── executor.ts       # 测试执行引擎
+│   │   ├── explorer.ts            # 页面探索逻辑
+│   │   ├── executor.ts            # 测试执行引擎
+│   │   ├── worker-pool-manager.ts # Worker Pool 管理器
+│   │   ├── worker.js              # Worker 子进程入口
+│   │   ├── task-scheduler.ts      # 任务调度器（优先级队列+工作窃取）
+│   │   ├── resource-detector.ts   # 机器资源检测
+│   │   ├── execution-plan.ts      # ExecutionPlan 类型
+│   │   ├── report-aggregator.ts   # 报告聚合器
 │   │   ├── dom-collector.ts  # DOM 采集
 │   │   ├── component-analyzer.ts
 │   │   ├── config-generator.ts
@@ -1999,14 +2090,29 @@ Agent-for-Web-UI-Automation-Testing/
   ├─ 融合生成增强 Acc Tree YAML
   └─ [deep 模式] 遍历 links → 递归
 
-/test-case-executor
-  ├─ 解析 YAML → preconditions / steps / expected
-  ├─ web-snapshot() → 增强 Acc Tree
-  ├─ LLM(steps + Acc Tree) → 操作指令
-  ├─ 委托 Playwright MCP: browser_click / browser_type / ...
-  ├─ 每步后 browser_snapshot() 更新 Acc Tree
-  ├─ LLM(expected + 最终 Acc Tree) → pass/fail
-  └─ 生成 JSON 报告
+/test-case-executor (进程级并行)
+  ┌─────────────────────────────────────────────────────────────┐
+  │ Phase 1 — 批量推理 (主进程, LLM, 并发≤4)                       │
+  │   解析 YAML → Acc Tree(可选) → LLM → ExecutionPlan[]          │
+  └──────────────┬──────────────────────────────────────────────┘
+                 ▼
+  ┌─────────────────────────────────────────────────────────────┐
+  │ Phase 2 — 并行执行 (Worker Pool)                              │
+  │   Worker-1 (Chromium-1): executionPlan[0].step[_] → ...      │
+  │   Worker-2 (Chromium-2): executionPlan[1].step[_] → ...      │
+  │   ...                                                        │
+  │   Worker-N (Chromium-N): executionPlan[k].step[_] → ...      │
+  │   ↑ N=min(cases, auto_detect_max_workers), 进程级隔离        │
+  │   资源感知: CPU>85%暂停扩容, 内存<1GB暂停分配                │
+  │   工作窃取: 空闲Worker从繁忙队列末尾拉取任务                   │
+  └──────────────┬──────────────────────────────────────────────┘
+                 ▼
+  ┌─────────────────────────────────────────────────────────────┐
+  │ Phase 3 — 按需补救 (主进程, LLM)                              │
+  │   failed_case → 错误截图+AccTree → LLM重新推理 → Worker重试  │
+  └──────────────┬──────────────────────────────────────────────┘
+                 ▼
+  结果聚合 → JSON 报告 + 实时进度推送
 
 /case-generator
   └─ 纯数据: Excel 列名匹配 → YAML 文件
@@ -2036,7 +2142,7 @@ Agent-for-Web-UI-Automation-Testing/
 | 1 | 基础能力层 | AccTree采集、Locator构建、YAML读写、InteractionInferrer(配置驱动) + dictionaries/base/ |
 | 2 | YAML 类型体系 | types/yaml.ts + dictionaries/ 相关 Zod schema |
 | 3 | 探索器 | explorer.ts (quick/deep), explore.tool.ts, web-component-scout.tool.ts |
-| 4 | 执行器 | executor.ts (Agent 推理调度+并行), executor.tool.ts |
+| 4 | 执行器 | worker-pool-manager.ts, task-scheduler.ts, worker.js, resource-detector.ts, execution-plan.ts, report-aggregator.ts, executor.tool.ts |
 | 5 | init + 快照 + 用例生成 | init.tool.ts, snapshot.tool.ts, case-generator.tool.ts |
 | 6 | 集成 + 文档 | mcp.config.yaml, config loader, README, 示例 |
 
@@ -2053,6 +2159,10 @@ Agent-for-Web-UI-Automation-Testing/
 | LLM 推理步骤翻译不准确 | 中 | Acc Tree 提供多策略定位器降级链；失败时截图→LLM 重新推理 |
 | 交互事件推断覆盖不足 | ~~低~~ → **极低** | 字典体系(三级优先级) + web-component-scout 自动发现 + _overrides.yaml 人工兜底 |
 | 项目字典与基础字典版本不一致 | 低 | YAML version 字段做兼容检查；base 更新时 tools/dict-migrate 迁移 |
+| 20 个 Chromium 同时启动 I/O 风暴 | 中 | 渐进式启动（间隔 800ms），启动完检测内存再继续 |
+| 被测服务器限流（高并发请求）| 高 | `per_worker_request_delay_ms` 可配延迟；par_group 分批 |
+| LLM API rate limit（Phase 1 批量推理）| 中 | 内置 rate limiter，`llm_max_concurrency` 限流 |
+| Chromium 长时间运行内存泄漏 | 中 | `restart_after_n_tasks` 每 N 个任务自动重启 Worker |
 
 ---
 
@@ -2291,6 +2401,186 @@ git push internal main     # 推企业内部 Git（企业内部自行管理 ente
 7. ~~**交互事件字典**~~ ✅
 8. ~~**事件字典可配置化**~~ ✅
 9. ~~**组件发现工具**~~ ✅
-10. ~~**信息安全分层设计**~~ 🆕 待评审 — 方案见第十章
-11. **并行隔离粒度** — 同组共享 Context，组间独立
+10. ~~**信息安全分层设计**~~ ✅ 方案见第十章
+11. ~~**进程级并行架构**~~ ✅ 进程级隔离 + 推理执行分离 + 资源感知调度，方案见第十二章
 12. **events 字段升级** — `string[]` 保持，Phase 2+ 评估
+13. **推理-执行分离模式默认值** — 推荐 sprint 模式，是否同意？
+
+
+---
+
+## 十二、进程级并行执行架构
+
+### 12.0 终极诉求
+
+> 软件测试人员最大的效率瓶颈在于**人工无法并行操作浏览器执行用例**。并行执行 20 条用例 → 启动 20 个 Chromium → 把机器 CPU 和内存用尽。
+
+### 12.1 推理-执行分离（核心突破）
+
+```
+Phase 1 — 批量推理 (主进程，LLM，有 rate limit)
+  所有用例 → LLM 批量生成 ExecutionPlan (约 1-3 分钟)
+
+Phase 2 — 并行执行 (Worker Pool，无 LLM)
+  N 个 Worker × N 个 Chromium → 纯 Playwright API 执行
+  不需要 LLM → 不受 rate limit → 真正 100% 并行
+
+Phase 3 — 按需补救 (主进程，LLM)
+  失败用例 → 错误截图 + Acc Tree → LLM → Worker 重试
+```
+
+**为什么必须分离**：Phase 1 集中推理一次（LLM 限流），Phase 2 就可以完全无 LLM 地并行——这是突破 LLM rate limit 瓶颈的唯一方式。
+
+**plan_mode 三模式**：
+
+| 模式 | Phase 1 行为 | 需要 Acc Tree? | 适用 |
+|------|-------------|:---:|------|
+| `sprint` | LLM 快速规划 → Phase2 执行 → Phase3 补救 | 可选 | 先锋探索，无 AccTree |
+| `strict` | 必须有 AccTree，严格生成 → Phase2 执行 | 必须 | 回归测试 |
+| `hybrid` | 有 AccTree 的严格，无的冲刺 | 混合 | 默认推荐 |
+
+### 12.2 Worker Pool 架构
+
+```
+                    ┌─────────────────────┐
+                    │   主进程 (master)     │
+                    │  WorkerPoolManager   │
+                    │  TaskScheduler       │
+                    └──────┬──────────────┘
+           ┌───────────────┼───────────────┐
+           ▼               ▼               ▼
+    ┌────────┐      ┌────────┐      ┌────────┐
+    │Worker-1│      │Worker-2│      │Worker-N│
+    │ Chromium│     │ Chromium│     │ Chromium│
+    │ Node.js │      │ Node.js │      │ Node.js │
+    └────────┘      └────────┘      └────────┘
+    (独立子进程)     (独立子进程)     (独立子进程)
+
+IPC 通信: child_process.fork() → process.send() / process.on('message')
+每个 Worker: 独立 Node.js 进程 + 独立 Playwright 实例 + 独立 Chromium
+```
+
+**Worker 状态机**：
+```
+idle → assigned → running → completed | failed | crashed
+                                 ↓
+                            completed → idle (接下一任务)
+
+crash → 指数退避重启 (5s/10s/20s/...) → 连续 ≥3 次 → 降低 max_workers
+```
+
+### 12.3 资源感知调度
+
+**启动时检测**（`detectResources()`）：
+
+```typescript
+物理核心 = CPU 按 model+speed 去重 → 16 核 (7950X)
+可用内存 = os.freemem() → 假设 48GB 空闲
+Chromium 基线 = 实测空实例 → ~600MB
+max_workers = min(物理核心 - 2, 可用内存 / Chromium基线) → min(14, 60) = 14
+machine_profile: "high" (max_workers ≥ 12)
+```
+
+**运行时检测**（`runtimeCheck()`，每 5 秒）：
+
+| 条件 | 动作 |
+|------|------|
+| 空闲内存 < 1GB | 暂停新任务分配，标记部分 Worker draining |
+| 空闲内存 > 2GB | 恢复 draining Worker + 可能扩容 |
+| CPU > 85% | 暂停扩容 |
+| Worker 心跳超时 15s | 判定死亡 → kill → 指数退避重启 |
+
+**渐进式启动**：避免 20 个 Chromium 同时启动导致 I/O 风暴 → 每 800ms 启动一个。
+
+### 12.4 Worker Pool 管理器核心逻辑
+
+```typescript
+class WorkerPoolManager {
+  // 自动检测机器资源
+  resolveConfig(userConfig): PoolConfig {
+    physicalCores = detectPhysicalCores()  // 按 model+speed 去重
+    freeMemMB = os.freemem()
+    memLimit = floor((freeMemMB - 1024) / 800)
+    cpuLimit = max(1, physicalCores - 2)
+    autoMax = min(cpuLimit, memLimit)
+  }
+
+  // 启动 Pool — 渐进式
+  async start(tasks: Task[]) {
+    for (let i = 0; i < initialWorkers; i++) {
+      await spawnWorker()
+      await sleep(800)  // 间隔 800ms
+    }
+    resourceTimer = setInterval(() => checkResources(), 5000)
+    heartbeatTimer = setInterval(() => checkHeartbeats(), 3000)
+  }
+
+  // Worker 消息处理
+  handleWorkerMessage(workerId, msg):
+    WORKER_READY  → dispatchNextTask()
+    HEARTBEAT     → 更新 lastHeartbeat/cpu/mem
+    TASK_RESULT   → 标记 IDLE → dispatchNextTask() 或 emit task:completed
+    WORKER_CRASH  → 指数退避重启
+
+  // 周期性资源检测
+  checkResources():
+    if (freeMem < lowWatermark) → drain N workers
+    if (freeMem > highWatermark) → restore draining + maybe spawn
+}
+```
+
+### 12.5 Worker 执行循环
+
+每个 Worker 子进程收到 ASSIGN_TASK 消息后：
+
+```typescript
+// worker.js — 独立 Node.js 子进程
+import playwright from 'playwright';
+
+process.on('message', async (msg: AssignTaskMessage) => {
+  const browser = await playwright.chromium.launch({ headless: true });
+  const context = await browser.newContext(
+    msg.authStatePath ? { storageState: msg.authStatePath } : {}
+  );
+  const page = await context.newPage();
+
+  for (const step of msg.executionPlan.steps) {
+    for (const locator of step.locators) {
+      try {
+        const el = buildLocator(page, locator);
+        await executeAction(el, page, step.action, step.value);
+        break; // 成功 → 下一步
+      } catch {
+        if (isLastLocator) return { status: 'failed', step, error };
+      }
+    }
+  }
+
+  process.send!({ type: 'TASK_RESULT', ... });
+});
+```
+
+### 12.6 物理瓶颈分析
+
+**16C32T + 64GB 典型 Windows 测试机**：
+
+| 资源 | 约束 | 推荐 |
+|------|------|------|
+| CPU | 16 物理核 - 2(OS+主进程) = 14 | max_workers=12 (保守) |
+| RAM | 64GB - 每 Chromium ~1.2GB × 12 = 14.4GB | 留 50GB 安全 |
+| 网络 | 12 并发请求 → 被测服务器可能限流 | per_worker_request_delay_ms=100 |
+| I/O | NVMe 截图+Trace 写入 | 无瓶颈 |
+
+**瓶颈排序**：服务器限流 > LLM rate limit > 内存 > 磁盘/GPU。
+
+### 12.7 目录结构补充
+
+```
+src/core/
+├── worker-pool-manager.ts     # Worker Pool 管理器
+├── worker.js                  # Worker 子进程入口
+├── resource-detector.ts       # 机器资源检测
+├── task-scheduler.ts          # 任务调度器（优先级队​列+工作窃取）
+├── execution-plan.ts          # ExecutionPlan 类型定义
+└── report-aggregator.ts       # 报告聚合器
+```
