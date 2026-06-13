@@ -1,95 +1,174 @@
 /**
- * 工具注册表
+ * 工具注册表 — Agent-for-Web-UI-Automation-Testing
  *
- * 所有 MCP 工具在此文件中集中注册。
- * 未来按功能模块拆分时，各模块文件 export 工具数组，在此处汇总即可。
+ * 6 个 MCP 工具:
+ *   1. web-init            — 初始化测试环境 + 自动登录
+ *   2. web-explore         — 页面探索（快速/深度）
+ *   3. test-case-executor  — 测试用例执行器（推理-执行分离 + Worker Pool）
+ *   4. case-generator      — Excel → YAML 批量转换
+ *   5. web-snapshot        — 增强 Acc Tree 快照
+ *   6. web-component-scout — 交互式组件发现
  *
- * 新增工具的步骤：
- * 1. 在此文件中 import Zod，定义 inputSchema
- * 2. 按照 ToolDefinition 接口构造工具对象
- * 3. 设置合适的 visibility（all / stdio / http）
- * 4. 将工具对象 push 到 ALL_TOOLS 数组
- * 5. 编写 handler 函数，实现工具逻辑
+ * 所有底层浏览器操作（navigate/click/type/fill_form/screenshot...）委托 Playwright MCP 执行
  */
 
 import * as z from 'zod/v4';
 import type { ToolDefinition } from '../types/tool.js';
 
-/** 辅助函数：将工具定义对象标注为 ToolDefinition 类型 */
 function def(tool: ToolDefinition): ToolDefinition {
   return tool;
 }
 
-// ==============================
-// 示例工具（后续替换为真实工具）
-// ==============================
-
-/** 回显工具：验证通信是否正常 — 所有模式可见 */
-const echoTool = def({
-  name: 'echo',
-  title: 'Echo',
-  description: '回显输入的消息内容，用于验证 MCP Server 通信是否正常',
+// ===== 1. web-init =====
+const webInitTool = def({
+  name: 'web-init',
+  title: 'Test Environment Initializer',
+  description:
+    '读取环境配置 YAML → 委托 Playwright MCP 启动浏览器 → 自动执行登录流程 → 保存登录态。' +
+    '内部调用 Playwright MCP 的 browser_navigate / browser_type / browser_click 等工具。',
   inputSchema: z.object({
-    message: z.string().describe('需要回显的消息内容'),
+    environment: z.string().describe('环境配置名 — 对应 enterprise/environments/{name}.yaml'),
+    account: z.string().optional().describe('使用的账号名（默认 admin）'),
+    headless: z.boolean().optional().describe('是否无头模式（默认 true）'),
+    save_state: z.boolean().optional().describe('是否保存登录态（默认 true）'),
   }),
   visibility: 'all',
-  handler: async ({ message }: { message: string }) => {
+  handler: async (args: any) => {
+    // Phase 5 实现完整登录流程编排
     return {
-      content: [{ type: 'text', text: String(message) }],
+      content: [{
+        type: 'text',
+        text: `[web-init] 环境 "${args.environment}" 初始化请求已接收。完整实现在 Phase 5。`,
+      }],
     };
   },
 });
 
-/** Stdio 专用示例工具 */
-const stdioDebugTool = def({
-  name: 'debug-status',
-  title: 'Debug Status',
-  description: '返回 MCP Server 内部运行状态信息（仅 Stdio 模式可见）',
-  inputSchema: z.object({}),
-  visibility: 'stdio',
-  handler: async () => {
+// ===== 2. web-explore =====
+const webExploreTool = def({
+  name: 'web-explore',
+  title: 'Web Page Exploration',
+  description:
+    '一键探索 Web 页面，产出增强版 Acc Tree YAML。' +
+    '委托 Playwright MCP browser_navigate/browser_snapshot + page.evaluate() 补采 DOM 属性/几何/框架信息。',
+  inputSchema: z.object({
+    url: z.string().describe('要探索的页面 URL'),
+    mode: z.enum(['quick', 'deep']).optional().describe('quick(单页) | deep(递归同域)，默认 quick'),
+    max_depth: z.number().optional().describe('深度探索时的最大爬取深度（默认 2）'),
+    max_pages: z.number().optional().describe('最大页面数（默认 20）'),
+    output_dir: z.string().optional().describe('YAML 输出目录（默认 acc-trees）'),
+  }),
+  visibility: 'all',
+  handler: async (args: any) => {
     return {
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify(
-            {
-              status: 'running',
-              uptime: process.uptime(),
-              nodeVersion: process.version,
-              memoryUsage: process.memoryUsage(),
-            },
-            null,
-            2,
-          ),
-        },
-      ],
+      content: [{
+        type: 'text',
+        text: `[web-explore] URL="${args.url}" mode="${args.mode || 'quick'}" — 完整实现在 Phase 3。`,
+      }],
     };
   },
 });
 
-/** HTTP 专用示例工具 */
-const httpPingTool = def({
-  name: 'ping',
-  title: 'Ping',
-  description: '简单的 HTTP ping 端点，返回 pong（仅 HTTP 模式可见）',
-  inputSchema: z.object({}),
-  visibility: 'http',
-  handler: async () => {
+// ===== 3. test-case-executor =====
+const testCaseExecutorTool = def({
+  name: 'test-case-executor',
+  title: 'Test Case Executor (Worker Pool + 推理执行分离)',
+  description:
+    '读取极简 YAML 用例 → 推理-执行分离三阶段 → 进程级并行执行 → 报告聚合。' +
+    'Phase 1 批量 LLM 推理生成 ExecutionPlan → Phase 2 Worker Pool 并行执行（每 Worker 独立 Chromium）→ Phase 3 失败补救。',
+  inputSchema: z.object({
+    cases: z.array(z.string()).describe('用例 YAML 文件路径或 glob 模式'),
+    parallel: z.union([z.literal('auto'), z.number(), z.literal('serial')]).optional()
+      .describe('并行数: auto(自动检测) | number | serial(串行)，默认 auto'),
+    plan_mode: z.enum(['sprint', 'strict', 'hybrid']).optional()
+      .describe('推理模式: sprint(冲刺) | strict(严格) | hybrid(混合)，默认 sprint'),
+    retry: z.number().optional().describe('失败重试次数（默认 0）'),
+    stop_on_failure: z.boolean().optional().describe('P0 失败是否终止（默认 false）'),
+  }),
+  visibility: 'all',
+  handler: async (args: any) => {
     return {
-      content: [{ type: 'text', text: 'pong' }],
+      content: [{
+        type: 'text',
+        text: `[test-case-executor] cases=${(args.cases as string[]).length} parallel=${args.parallel || 'auto'} mode=${args.plan_mode || 'sprint'} — 完整实现在 Phase 4。`,
+      }],
     };
   },
 });
 
-// ==============================
-// 汇总导出
-// ==============================
+// ===== 4. case-generator =====
+const caseGeneratorTool = def({
+  name: 'case-generator',
+  title: 'Test Case Generator (Excel → YAML)',
+  description:
+    '将 Excel 格式的测试用例批量转换为极简 YAML 格式。智能列名匹配（支持中英文多别名）。',
+  inputSchema: z.object({
+    source: z.string().describe('.xlsx 文件路径'),
+    output_dir: z.string().optional().describe('YAML 输出目录（默认 test-cases）'),
+    sheet: z.string().optional().describe('工作表名（默认第一个 sheet）'),
+    environment: z.string().optional().describe('若 Excel 中无环境列则统一使用此环境'),
+  }),
+  visibility: 'all',
+  handler: async (args: any) => {
+    return {
+      content: [{
+        type: 'text',
+        text: `[case-generator] source="${args.source}" — 完整实现在 Phase 5。`,
+      }],
+    };
+  },
+});
 
-/** 所有已注册工具的统一数组 */
+// ===== 5. web-snapshot =====
+const webSnapshotTool = def({
+  name: 'web-snapshot',
+  title: 'Enhanced Accessibility Tree Snapshot',
+  description:
+    'Playwright MCP browser_snapshot 增强版。' +
+    '委托 browser_snapshot 获取 ARIA 树 + page.evaluate() 补采 DOM/几何/框架/定位器/交互事件。',
+  inputSchema: z.object({
+    compact: z.boolean().optional().describe('紧凑模式：仅输出 ref+role+actionable+locators(前2级)'),
+  }),
+  visibility: 'all',
+  handler: async (args: any) => {
+    return {
+      content: [{
+        type: 'text',
+        text: `[web-snapshot] compact=${args.compact || false} — 完整实现在 Phase 5。`,
+      }],
+    };
+  },
+});
+
+// ===== 6. web-component-scout =====
+const webComponentScoutTool = def({
+  name: 'web-component-scout',
+  title: 'Web Component Scout',
+  description:
+    '交互式组件发现工具。打开 Chromium（非 headless），测试人员手动浏览页面，' +
+    '系统自动采集 DOM 组件签名 → 生成项目级组件字典配置。',
+  inputSchema: z.object({
+    project: z.string().describe('项目名称 → dictionaries/projects/{project}/'),
+    base_url: z.string().describe('起始 URL'),
+    session_timeout: z.number().optional().describe('最长会话秒数（默认 3600）'),
+  }),
+  visibility: 'all',
+  handler: async (args: any) => {
+    return {
+      content: [{
+        type: 'text',
+        text: `[web-component-scout] project="${args.project}" base_url="${args.base_url}" — 完整实现在 Phase 3。`,
+      }],
+    };
+  },
+});
+
+// ===== 汇总 =====
 export const ALL_TOOLS: ToolDefinition[] = [
-  echoTool,
-  stdioDebugTool,
-  httpPingTool,
-  // 在此处继续添加新工具...
+  webInitTool,
+  webExploreTool,
+  testCaseExecutorTool,
+  caseGeneratorTool,
+  webSnapshotTool,
+  webComponentScoutTool,
 ];

@@ -1,0 +1,126 @@
+# 控件→事件映射规则 v1.0
+rules:
+  - id: btn-basic
+    priority: 10
+    match:
+      any:
+        - tagName: "button"
+        - role: "button"
+        - tagName: "a"
+    events: [click, focus, blur]
+    conditional_events:
+      - when: { domAttr: { type: "submit" } }
+        events: [submit_on_enter]
+      - when: { domHasAttr: "title" }
+        events: [hover]
+      - when: { componentContains: "dropdown" }
+        events: [hover, open_dropdown]
+  - id: textbox-basic
+    priority: 10
+    match:
+      any:
+        - role: "textbox"
+        - role: "searchbox"
+    events: [fill, clear, focus, blur, press_key, scroll_into_view]
+    conditional_events:
+      - when: { role: "searchbox" }
+        events: [type_char_by_char]
+      - when: { domHasAttr: "autocomplete" }
+        events: [autocomplete]
+      - when: { a11yAttr: { multiline: true } }
+        events: [paste]
+  - id: input-number-spin
+    priority: 20
+    match:
+      all: [{ tagName: "input" }, { domAttr: { type: "number" } }]
+    events: [fill, set_value, increment, decrement, focus, blur, press_key]
+  - id: combobox-basic
+    priority: 10
+    match:
+      any:
+        - role: "combobox"
+        - role: "listbox"
+        - tagName: "select"
+    events: [open_dropdown, close_dropdown, select_single, focus, blur, scroll_into_view]
+    conditional_events:
+      - when: { domHasAttr: "multiple" }
+        events: [select_multi, clear_all, deselect]
+      - when: { classContains: "ant-select-show-search" }
+        events: [search_and_select]
+  - id: checkbox-basic
+    priority: 10
+    match: { role: "checkbox" }
+    events: [check, uncheck, toggle, focus, blur, press_key]
+  - id: radio-basic
+    priority: 10
+    match: { role: "radio" }
+    events: [check, toggle, focus, blur, press_key]
+  - id: switch-basic
+    priority: 10
+    match: { role: "switch" }
+    events: [turn_on, turn_off, toggle, focus, blur]
+  - id: slider-basic
+    priority: 10
+    match: { role: "slider" }
+    events: [set_value, drag_to, increment, decrement, focus, blur]
+  - id: spinbutton-basic
+    priority: 10
+    match: { role: "spinbutton" }
+    events: [set_value, increment, decrement, focus, blur]
+  - id: columnheader-basic
+    priority: 10
+    match: { role: "columnheader" }
+    events: [click, focus, blur]
+    conditional_events:
+      - when: { any: [{ classContains: "ant-table-column-has-sorters" }, { classContains: "column-has-sorters" }] }
+        events: [sort_by_column]
+      - when: { any: [{ classContains: "ant-table-column-has-filters" }, { classContains: "column-has-filters" }] }
+        events: [filter_column, open_dropdown]
+  - id: row-basic
+    priority: 10
+    match: { role: "row" }
+    events: [select_row, click]
+  - id: table-basic
+    priority: 15
+    match:
+      any: [{ role: "table" }, { role: "grid" }]
+    events: [sort_by_column, filter_column, select_row, select_all, paginate, resize_column]
+  - id: treeitem-basic
+    priority: 10
+    match: { role: "treeitem" }
+    events: [expand, collapse, select_item, click]
+  - id: ant-cascader
+    priority: 30
+    match: { componentContains: "ant-cascader" }
+    events: [open_dropdown, close_dropdown, expand, collapse, select_single]
+  - id: menuitem-basic
+    priority: 10
+    match:
+      any: [{ role: "menuitem" }, { role: "menuitemcheckbox" }, { role: "menuitemradio" }]
+    events: [click, select_item, hover, focus, blur]
+  - id: dialog-basic
+    priority: 10
+    match:
+      any: [{ role: "dialog" }, { role: "alertdialog" }]
+    events: [dialog_close, press_key]
+    conditional_events:
+      - when: { classContains: "confirm" }
+        events: [dialog_confirm, dialog_cancel]
+  - id: datepicker-component
+    priority: 30
+    match:
+      any: [{ componentContains: "picker" }, { componentContains: "date-picker" }, { componentContains: "datepicker" }]
+    events: [pick_date, focus, blur]
+    conditional_events:
+      - when: { componentContains: "range" }
+        events: [pick_range, date_clear]
+  - id: file-upload
+    priority: 20
+    match:
+      all: [{ tagName: "input" }, { domAttr: { type: "file" } }]
+    events: [select_file, drag_drop_file, remove_file]
+  - id: pagination-component
+    priority: 30
+    match:
+      any: [{ componentContains: "ant-pagination" }, { componentContains: "el-pagination" }, { componentContains: "n-pagination" }, { componentContains: "arco-pagination" }]
+    events: [paginate, click]

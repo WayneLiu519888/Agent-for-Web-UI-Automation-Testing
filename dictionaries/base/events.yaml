@@ -1,0 +1,206 @@
+# 交互事件字典 v1.0
+events:
+  - id: click
+    category: pointer
+    description: 鼠标左键单击
+  - id: dblclick
+    category: pointer
+    description: 鼠标左键双击
+  - id: right_click
+    category: pointer
+    description: 鼠标右键单击
+  - id: long_press
+    category: pointer
+    description: 长按（移动端）
+  - id: hover
+    category: hover
+    description: 鼠标悬停
+  - id: hover_tooltip
+    category: hover
+    description: 悬停显示 tooltip
+  - id: hover_dropdown
+    category: hover
+    description: 悬停打开下拉菜单
+  - id: fill
+    category: input
+    description: 填充文本
+  - id: clear
+    category: input
+    description: 清空内容
+  - id: type_char_by_char
+    category: input
+    description: 逐字符输入
+  - id: paste
+    category: input
+    description: 粘贴
+  - id: submit_on_enter
+    category: input
+    description: 回车提交表单
+  - id: autocomplete
+    category: input
+    description: HTML5 autocomplete
+  - id: select_single
+    category: select
+    description: 单选
+  - id: select_multi
+    category: select
+    description: 多选
+  - id: search_and_select
+    category: select
+    description: 搜索后选择
+  - id: clear_all
+    category: select
+    description: 清除所有已选项
+  - id: deselect
+    category: select
+    description: 取消单个已选项
+  - id: open_dropdown
+    category: popup
+    description: 打开下拉面板
+  - id: close_dropdown
+    category: popup
+    description: 关闭下拉面板
+  - id: filter_options
+    category: popup
+    description: 过滤下拉选项
+  - id: check
+    category: toggle
+    description: 勾选
+  - id: uncheck
+    category: toggle
+    description: 取消勾选
+  - id: toggle
+    category: toggle
+    description: 切换选中状态
+  - id: turn_on
+    category: toggle
+    description: 打开开关
+  - id: turn_off
+    category: toggle
+    description: 关闭开关
+  - id: set_value
+    category: range
+    description: 设置具体值
+  - id: increment
+    category: range
+    description: 增加步长
+  - id: decrement
+    category: range
+    description: 减少步长
+  - id: drag_to
+    category: range
+    description: 拖拽到指定位置
+  - id: dialog_open
+    category: dialog
+    description: 打开对话框
+  - id: dialog_close
+    category: dialog
+    description: 关闭对话框
+  - id: dialog_confirm
+    category: dialog
+    description: 确认对话框
+  - id: dialog_cancel
+    category: dialog
+    description: 取消对话框
+  - id: dialog_dismiss
+    category: dialog
+    description: 点击遮罩关闭
+  - id: expand
+    category: tree
+    description: 展开节点
+  - id: collapse
+    category: tree
+    description: 折叠节点
+  - id: select_item
+    category: tree
+    description: 选择菜单项
+  - id: select_row
+    category: table
+    description: 选中行
+  - id: select_all
+    category: table
+    description: 全选
+  - id: sort_by_column
+    category: table
+    description: 按列排序
+  - id: filter_column
+    category: table
+    description: 列过滤
+  - id: resize_column
+    category: table
+    description: 调整列宽
+  - id: drag_row
+    category: table
+    description: 拖拽行排序
+  - id: paginate
+    category: table
+    description: 翻页
+  - id: pick_date
+    category: date
+    description: 选择日期
+  - id: pick_time
+    category: date
+    description: 选择时间
+  - id: pick_range
+    category: date
+    description: 选择日期范围
+  - id: date_clear
+    category: date
+    description: 清空日期
+  - id: date_today
+    category: date
+    description: 跳转到今天
+  - id: select_file
+    category: file
+    description: 选择文件
+  - id: drag_drop_file
+    category: file
+    description: 拖放文件
+  - id: remove_file
+    category: file
+    description: 移除已选文件
+  - id: drag_start
+    category: drag
+    description: 开始拖拽
+  - id: drag_end
+    category: drag
+    description: 结束拖拽
+  - id: drop
+    category: drag
+    description: 释放拖拽目标
+  - id: play
+    category: media
+    description: 播放
+  - id: pause
+    category: media
+    description: 暂停
+  - id: stop
+    category: media
+    description: 停止
+  - id: seek
+    category: media
+    description: 跳转进度
+  - id: volume
+    category: media
+    description: 调整音量
+  - id: fullscreen
+    category: media
+    description: 全屏
+  - id: press_key
+    category: keyboard
+    description: 按键盘按键
+  - id: press_shortcut
+    category: keyboard
+    description: 按组合快捷键
+  - id: focus
+    category: focus
+    description: 获得焦点
+  - id: blur
+    category: focus
+    description: 失去焦点
+  - id: scroll_to
+    category: scroll
+    description: 滚动到指定位置
+  - id: scroll_into_view
+    category: scroll
+    description: 滚动到可视区
