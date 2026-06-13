@@ -2384,7 +2384,8 @@ git push internal main     # 推企业内部 Git（企业内部自行管理 ente
 10. ~~**信息安全分层设计**~~ ✅ 方案见第十章
 11. ~~**进程级并行架构**~~ ✅ 进程级隔离 + 推理执行分离 + 资源感知调度，方案见第十二章
 12. ~~**events 字段升级**~~ ✅ 当前保持 `string[]`，Phase 2+ 评估。**详细扩展方案见第十三章**
-13. ~~**推理-执行分离模式默认值**~~ ✅ **sprint 模式**为默认。零门槛：用户不需要先跑 web-explore 就能用 /exec-test。Phase 3 自动补救保障最终通过率。熟练后可选 strict 提效。详细分析见第十二章 plan_mode 三模式对比表
+13. ~~**推理-执行分离模式默认值**~~ ✅ sprint 为默认，见第十二章 plan_mode 三模式对比表
+14. ~~**能力层与企业运行时层分层**~~ ✅ 最终两层架构见第十四章：`src/capability/`(全部工具代码→GitHub) + `enterprise/`(全部数据产出→.gitignore)
 
 
 ---
@@ -2775,3 +2776,204 @@ src/core/
 ├── execution-plan.ts          # ExecutionPlan 类型定义
 └── report-aggregator.ts       # 报告聚合器
 ```
+
+
+---
+
+## 十四、能力层与企业运行时层 — 最终分层架构
+
+### 14.0 核心原则：只有两层，没有"数据层"
+
+> **先前"数据层"（src/data/）的概念是错误的**——它把"数据操作工具"和"数据本身"混为一谈。
+> YAML 读写、Excel 转换、配置加载、报告生成——这些都是**纯工具代码**，应归入能力层。
+> 工具产生的**数据产出**（测试用例 YAML、测试报告 JSON、Acc Tree 快照）——这些才属于企业运行时层。
+
+### 14.1 两层架构
+
+```
+Repository 根目录
+
+  ╔═══════════════════════════════════════════════════════╗
+  ║ 能力层 (Capability) — 所有工具代码 → GitHub ✅      ║
+  ║ src/capability/  30+ 文件                           ║
+  ║                                                     ║
+  ║ tools/        6 个自研 MCP 工具                     ║
+  ║ playwright/   23 个 Playwright MCP 封装              ║
+  ║ engine/       核心引擎 (探索/执行/调度/推断)          ║
+  ║ analysis/     组件分析                               ║
+  ║ yaml/         YAML 读写工具                          ║
+  ║ excel/        Excel 转换工具                         ║
+  ║ config/       配置加载工具                            ║
+  ║ report/       报告生成工具 (聚合+统计)                ║
+  ╚═══════════════════════════════════════════════════════╝
+
+  ╔═══════════════════════════════════════════════════════╗
+  ║ 企业运行时层 (Enterprise) — 数据产出                  ║
+  ║ enterprise/  ★ .gitignore 整目录禁止提交             ║
+  ║                                                     ║
+  ║ environments/   环境配置 (URL/账号/租户)    🔴致命     ║
+  ║ test-cases/     YAML 测试用例 (Excel转换后) 🟡中危    ║
+  ║ acc-trees/      Acc Tree 快照 (探索产出)    🟠高危     ║
+  ║ plans/          执行计划 (Phase 1 产出)     🟠高危     ║
+  ║ reports/        测试报告实例 ★核心产出       🟠高危    ║
+  ║ screenshots/    截图 ★                      🟠高危    ║
+  ║ traces/         Playwright Trace ★          🟠高危    ║
+  ║ auth/           登录态缓存 (可选加速)        🔴致命    ║
+  ║ dictionaries/   项目组件字典                 🟡中危    ║
+  ║ configs/        企业覆盖配置                 🔴致命    ║
+  ╚═══════════════════════════════════════════════════════╝
+
+不变层: src/types/ src/server/ src/entries/ src/utils/ src/index.ts
+```
+
+### 14.2 四个存疑点的判定
+
+| # | 项目 | 判定 | 理由 |
+|---|------|:---:|------|
+| 1 | **YAML 读写** | → 能力层 | `readTestCase()`/`writeAccTree()` 是纯函数工具，不含数据。数据本身在企业层 |
+| 2 | **Excel 转换** | → 能力层 | `convertXlsxToYaml()` 是纯转换逻辑。Excel 由用户提供，产出 YAML 存入 `enterprise/test-cases/` |
+| 3 | **配置加载** | → 能力层 | `loadConfig()` 是纯代码。`mcp.config.yaml`(开源默认)在仓库根；`mcp.enterprise.yaml`(企业覆盖)在 `enterprise/configs/` |
+| 4 | **测试报告** | → 分开 | **工具**（aggregator 聚合/统计/计算）→ 能力层；**实例**（report-xxx.json）→ `enterprise/reports/` ★.gitignore |
+
+### 14.3 `enterprise/` 各目录功能定义
+
+#### 14.3.1 environments/ — 环境配置（必须）🔴致命
+
+```yaml
+# enterprise/environments/test-env.yaml
+name: "test-env"
+target:
+  base_url: "https://test.internal.company.com"
+  login_url: "https://test.internal.company.com/login"
+accounts:
+  admin:
+    username: "admin"
+    password: "${ENV_ADMIN_PASSWORD}"   # 密码走环境变量
+```
+
+#### 14.3.2 test-cases/ — YAML 测试用例（必须）🟡中危
+
+`case-generator` 工具读取 Excel → 转换产出 YAML → 存入此处。或测试人员直接手写极简 YAML。
+
+#### 14.3.3 acc-trees/ — Acc Tree 快照（必须）🟠高危
+
+`web-explore` → 委托 Playwright MCP `browser_snapshot` → 融合 `page.evaluate()` DOM 数据 → 写入增强 Acc Tree YAML。含企业内部系统页面结构、字段名、API 端点。
+
+#### 14.3.4 plans/ — 执行计划（必须）🟠高危
+
+**功能**：Phase 1 LLM 推理的**结构化产出**——将人工写的自然语言用例翻译为机器可执行的 Playwright 操作序列，是推理-执行分离架构的关键依赖。
+
+**核心作用**：让 Phase 2 的 Worker Pool **完全脱离 LLM** 执行。Worker 直接读取 `.plan.yaml` → 按 locators 降级链依次尝试 → 纯 Playwright API。
+
+**三个额外作用**：缓存加速（同一条用例第二次跑跳过 Phase 1）、人工审计（检查 LLM 推理是否合理）、人工修正（LLM 推理有误时直接编辑 plan 文件）。
+
+**重新生成条件**：用例 YAML 或关联 Acc Tree 被修改时自动触发；用户可显式加 `--replan` 强制重推理。
+
+#### 14.3.5 reports/ — 测试报告实例（必须）🟠高危
+
+`test-case-executor` 执行完成后 → `report/aggregator.ts` 聚合 → `report/writer.ts` 写入 JSON 到 `enterprise/reports/`。测试结果反映企业内部系统质量和缺陷信息。
+
+#### 14.3.6 screenshots/ + traces/ — 截图 + Trace（必须）🟠高危
+
+Phase 2/3 执行中：失败自动截图 + 录 Trace。截图直接暴露企业内部系统界面。
+
+#### 14.3.7 auth/ — 登录态缓存（可选）🔴致命
+
+| 观点 | 判定 |
+|------|:---:|
+| "每条 case 都重新登录" | ✅ 完全可行 — 企业测试环境无反爬，Cookie 15 分钟过期无所谓 |
+| "Worker Pool 多进程共享" | ✅ 有价值 — 12 个 Worker 一次登录全部复用，节省 12× 登录耗时 |
+| "CI/CD 跨 session 缓存" | ⚠️ 企业 Cookie 15 分钟过期 → 跨天缓存无意义。仅同一次 CI Run 内有价值 |
+
+**结论**：保留 `auth/` 作为**可选加速缓存**——不登录也能跑但更慢。企业 Cookie 短过期意味着跨 session 缓存价值有限，但对同一批并行执行的 12 个 Worker 仍有 12× 加速价值。含企业系统 Cookie/Token 🔴致命。
+
+#### 14.3.8 dictionaries/projects/ — 项目组件字典（必须）🟡中危
+
+`web-component-scout` → 采集 DOM 组件签名 → 对照 `base/controls.yaml` → 写入 `enterprise/dictionaries/projects/`。
+
+#### 14.3.9 configs/ — 企业覆盖配置（必须）🔴致命
+
+`codehub/repo.yaml`（企业 CodeHub 仓库地址/branch）+ `mcp.enterprise.yaml`（覆盖 `mcp.config.yaml`）。
+
+### 14.4 能力层完整目录
+
+```
+src/capability/
+├── index.ts                          # 统一导出
+├── tools/registry.ts                 # 6 个自研 MCP 工具
+├── playwright/                       # 23 个 Playwright MCP 封装
+│   ├── adapter.ts                    #   PwAdapter 统一接口
+│   ├── navigate.ts                   # → browser_navigate
+│   ├── click.ts                      # → browser_click
+│   ├── fill.ts                       # → browser_type
+│   ├── form.ts                       # → browser_fill_form
+│   ├── select.ts                     # → browser_select_option
+│   ├── hover.ts                      # → browser_hover
+│   ├── keyboard.ts                   # → browser_press_key
+│   ├── wait.ts                       # → browser_wait_for
+│   ├── snapshot.ts                   # → browser_snapshot
+│   ├── screenshot.ts                 # → browser_take_screenshot
+│   ├── evaluate.ts                   # → browser_evaluate
+│   └── ...10 files...
+├── engine/                           # 核心引擎
+│   ├── acc-tree.ts                   #   Acc Tree 增强采集
+│   ├── interaction-inferrer.ts       #   配置驱动事件推断
+│   ├── locator-builder.ts            #   多策略定位器
+│   ├── explorer.ts                   #   BFS 页面探索
+│   ├── worker-pool-manager.ts        #   Worker Pool 管理
+│   ├── task-scheduler.ts             #   任务调度
+│   ├── resource-detector.ts          #   资源检测
+│   └── dom-collector.ts              #   DOM 采集
+├── analysis/                         # 组件分析
+│   ├── component-analyzer.ts
+│   └── component-scout.ts
+├── yaml/reader.ts + writer.ts        # YAML 读写工具
+├── excel/parser.ts + converter.ts    # Excel 转换工具
+├── config/loader.ts + generator.ts   # 配置加载工具
+└── report/aggregator.ts + writer.ts  # 报告生成工具
+```
+
+### 14.5 数据流：能力层工具 → 企业运行时层
+
+```
+能力层工具                              产出                       企业运行时层
+─────────────────────────────────────  ────────────────────      ────────────
+web-init                               (登录态 Cookie)     →     auth/*.json
+web-explore                            (增强 Acc Tree)    →     acc-trees/*.yaml
+case-generator                         (YAML 测试用例)    →     test-cases/*.yaml
+test-case-executor (Phase 1)           (执行计划)         →     plans/*.plan.yaml
+test-case-executor (Phase 2-3)         (测试报告 JSON)    →     reports/*.json
+                                       (失败截图)         →     screenshots/*.png
+                                       (Trace)            →     traces/*.zip
+web-component-scout                    (项目组件配置)     →     dictionaries/projects/*/
+config/loader (企业覆盖)               (企业配置读取)     ←     configs/mcp.enterprise.yaml
+```
+
+### 14.6 迁移计划 (7 阶段)
+
+| 阶段 | 内容 | 编译保证 |
+|:---:|------|:---:|
+| 1 | 新建 `src/capability/` 目录结构 (engine/playwright/yaml/excel/config/report/analysis/tools) | ✅ 目录不影响编译 |
+| 2 | 迁移 15 个 `src/core/*.ts` → `src/capability/` 对应子目录 + 修正 import 路径 | ✅ 逐文件 mv + sed |
+| 3 | 新建 Playwright 封装层 (adapter.ts + 23 个封装工具) | ✅ 新文件 |
+| 4 | 更新 `src/server/factory.ts` + `src/entries/` 的 import 路径 | ✅ 仅改路径 |
+| 5 | 拆分 `case-generator.ts` → `excel/parser.ts` + `excel/converter.ts`；拆分 `report-aggregator.ts` → `report/aggregator.ts` + `report/writer.ts` | ✅ 拆分纯数据部分 |
+| 6 | 删除 `src/core/` + `src/config/` + `src/tools/` 旧目录；`grep -r` 验证零引用 | ✅ 零残留引用 |
+| 7 | 更新蓝图第五章 (目录结构)、CLAUDE.md、四语言 README | ✅ 仅文档 |
+
+每阶段独立可编译 `npx tsc --noEmit`。
+
+### 14.7 企业层判定总结
+
+| 目录 | 保留? | 风险 | 说明 |
+|------|:---:|:---:|------|
+| `environments/` | ✅ 必须 | 🔴 | URL/账号/租户 |
+| `test-cases/` | ✅ 必须 | 🟡 | 用例文本 |
+| `acc-trees/` | ✅ 必须 | 🟠 | 页面结构 |
+| `plans/` | ✅ 必须 | 🟠 | 执行计划 |
+| `reports/` | ✅ 必须 | 🟠 | 测试报告 ★核心产出 |
+| `screenshots/` | ✅ 必须 | 🟠 | 内部界面 |
+| `traces/` | ✅ 必须 | 🟠 | Trace |
+| `auth/` | ✅ 可选 | 🔴 | Cookie 15分钟过期，仅同次 CI Run 有价值 |
+| `dictionaries/projects/` | ✅ 必须 | 🟡 | 组件字典 |
+| `configs/` | ✅ 必须 | 🔴 | CodeHub 信息 |
