@@ -1872,31 +1872,113 @@ logging:
 
 ```
 Agent-for-Web-UI-Automation-Testing/
-├── mcp.config.yaml                  # 全局配置
-├── package.json / tsconfig.json / .gitignore
 │
-├── environments/   (测试环境 YAML)
-├── test-cases/     (测试用例 YAML)
-├── acc-trees/      (探索产物，可 .gitignore)
-├── auth/           (登录态，.gitignore)
+│   ╔══════════════════════════════════════════════════════════╗
+│   ║  开放源码层（提交到 GitHub，Apache-2.0 许可证）           ║
+│   ╚══════════════════════════════════════════════════════════╝
 │
-├── src/
-│   ├── index.ts
-│   ├── config/     (mcp.config.yaml 加载 + Zod schema)
-│   ├── types/      (tool.ts + yaml.ts + interaction-events.ts)
-│   ├── tools/      (6 个 MCP 工具定义)
-│   ├── core/       (AccTree采集、Locator构建、InteractionInferrer、DOM采集、组件分析、配置生成、探索器、执行器、YAML读写)
-│   ├── server/     (McpServer 工厂)
-│   ├── entries/    (stdio.ts + http.ts)
-│   └── utils/      (env 变量替换、日志、Playwright MCP 调用代理)
+├── package.json              # NPM 包清单（不含企业信息）
+├── tsconfig.json             # TypeScript 配置
+├── .gitignore                # Git 忽略规则（关键文件，见第十章）
+├── LICENSE                   # Apache-2.0
+├── README.md                 # 公开项目说明（不含企业信息）
 │
-├── dictionaries/              # ★ 新增：交互事件字典体系
+├── docs/                     # 公开文档
+│   ├── architecture.md       # 架构说明
+│   ├── tool-reference.md     # 工具参考手册
+│   └── examples/             # 示例（用公开的 demo 数据）
+│
+├── src/                      # 源码（框架引擎，与任何企业无关）
+│   ├── index.ts              # 公共 API 导出
+│   ├── config/               # mcp.config.yaml 加载器 + Zod schema
+│   │   ├── loader.ts         # 双层配置加载：开源默认 → 企业覆盖
+│   │   └── schema.ts
+│   ├── types/                # 类型定义
+│   │   ├── tool.ts
+│   │   ├── yaml.ts            # AccTree / TestCase / Environment schema
+│   │   └── interaction-events.ts
+│   ├── tools/                # 6 个 MCP 工具定义
+│   │   ├── registry.ts       # ALL_TOOLS 数组
+│   │   ├── init.tool.ts
+│   │   ├── explore.tool.ts
+│   │   ├── executor.tool.ts
+│   │   ├── case-generator.tool.ts
+│   │   ├── snapshot.tool.ts
+│   │   └── component-scout.tool.ts
+│   ├── core/                 # 核心引擎
+│   │   ├── acc-tree.ts       # Acc Tree 增强采集
+│   │   ├── locator-builder.ts
+│   │   ├── interaction-inferrer.ts
+│   │   ├── explorer.ts       # 页面探索逻辑
+│   │   ├── executor.ts       # 测试执行引擎
+│   │   ├── dom-collector.ts  # DOM 采集
+│   │   ├── component-analyzer.ts
+│   │   ├── config-generator.ts
+│   │   ├── yaml-reader.ts
+│   │   └── yaml-writer.ts
+│   ├── server/
+│   │   ├── factory.ts        # McpServer 工厂
+│   │   └── index.ts
+│   ├── entries/
+│   │   ├── stdio.ts          # Stdio 入口
+│   │   └── http.ts           # HTTP 入口
+│   └── utils/
+│       ├── env.ts            # ${env.VAR} 替换
+│       ├── paths.ts          # ★ 路径解析：开源路径 → 企业路径覆盖
+│       └── logger.ts
+│
+├── dictionaries/             # 交互事件字典
 │   ├── README.md
-│   ├── base/                  # 基础字典（提交 git）
+│   ├── base/                 # ★ 提交 git：通用事件 + 通用控件规则
 │   │   ├── events.yaml
 │   │   └── controls.yaml
-│   ├── projects/              # 项目字典（.gitignore）
-│   └── schemas/               # JSON Schema 校验
+│   ├── projects/             # ★ .gitignore：项目字典（禁止提交）
+│   └── schemas/
+│       ├── events.schema.json
+│       ├── controls.schema.json
+│       └── components.schema.json
+│
+├── enterprise/               # ★★★ .gitignore 整目录禁止提交 ★★★
+│   ├── .gitkeep              #    ← 仅保留空目录占位标记
+│   │
+│   ├── configs/              # 企业级配置
+│   │   ├── codehub/          # CodeHub 仓库信息（禁止提交）
+│   │   │   └── repo.yaml
+│   │   └── mcp.enterprise.yaml  # 企业覆盖配置（覆盖 mcp.config.yaml）
+│   │
+│   ├── environments/         # 企业测试环境（URL/账号/租户/登录流程）
+│   │   ├── test-env.yaml
+│   │   ├── staging-env.yaml
+│   │   └── prod-env.yaml
+│   │
+│   ├── test-cases/           # 企业测试用例 YAML
+│   │   ├── login/
+│   │   ├── user-mgmt/
+│   │   └── smoke/
+│   │
+│   ├── acc-trees/            # 探索产物（页面结构快照）
+│   ├── auth/                 # 登录态文件
+│   │
+│   ├── dictionaries/         # ★ 企业项目字典覆盖
+│   │   └── projects/
+│   │       └── {project-name}/
+│   │           ├── components.yaml
+│   │           └── _overrides.yaml
+│   │
+│   ├── screenshots/          # 截图产出
+│   ├── reports/              # 测试报告
+│   ├── traces/               # Playwright Trace
+│   ├── logs/                 # 运行日志
+│   │
+│   └── docs/                 # ★ 企业文档（禁止提交，可与内部 wiki 同步）
+│       ├── enterprise-readme.md
+│       ├── project-blueprint.md
+│       └── code-review-notes.md
+│
+│   ╔══════════════════════════════════════════════════════════╗
+│   ║  以上 enterprise/ 中的所有文件均受 .gitignore 保护        ║
+│   ║  在任何网络环境下 git push 都不会将 enterprise/ 传出    ║
+│   ╚══════════════════════════════════════════════════════════╝
 ```
 
 ---
@@ -1987,3 +2069,228 @@ Agent-for-Web-UI-Automation-Testing/
 9. ~~**组件发现工具**~~ ✅ 已完成：web-component-scout，交互式探索→生成项目组件配置
 10. **并行隔离粒度** — 同 par_group 共享 Context（快），不同组独立（安全），设计合理？
 11. **events 字段升级** — 当前 `string[]`，Phase 2+ 是否需要 confidence/source 结构？→ 保持简单，Phase 2 后再评估
+
+
+---
+
+## 十、信息安全分层设计（InfoSec Layering）
+
+### 10.0 问题背景
+
+| 场景 | 网络环境 | Git 远端 | 安全约束 |
+|------|---------|----------|---------|
+| **家庭办公** | 家庭网络，无 DLP | GitHub 公开仓库 | 企业信息不得推送 |
+| **企业内部** | 企业内网，CodeHub 监控 + DLP | 企业内部 Git + GitHub（两套 remote） | `enterprise/` 目录严格禁止推送到 GitHub |
+
+**核心矛盾**：同一份 Repository 在两套网络间流转，必须确保企业信息在任何网络环境下都不会被 git push 到 GitHub。
+
+### 10.1 分层模型
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                  Repository 根目录                        │
+│                                                         │
+│  ╔═══════════════════════════════════════════════════╗  │
+│  ║ Layer 1: 开放源码层 (Public Open Source)          ║  │
+│  ║ 提交到 GitHub，Apache-2.0 许可证                   ║  │
+│  ║                                                   ║  │
+│  ║ src/          框架引擎源码                          ║  │
+│  ║ dictionaries/base/  通用字典                       ║  │
+│  ║ docs/         公开文档                             ║  │
+│  ║ package.json  项目清单                             ║  │
+│  ║ README.md     项目介绍                             ║  │
+│  ║ mcp.config.yaml  默认配置（无企业信息）              ║  │
+│  ╚═══════════════════════════════════════════════════╝  │
+│                                                         │
+│  ╔═══════════════════════════════════════════════════╗  │
+│  ║ Layer 2: 企业机密层 (Enterprise Private)          ║  │
+│  ║ ★ 整目录 .gitignore — 永不提交到 GitHub            ║  │
+│  ║                                                   ║  │
+│  ║ enterprise/                                       ║  │
+│  ║   ├── configs/       企业配置                       ║  │
+│  ║   ├── environments/  测试环境（URL/账号/租户）        ║  │
+│  ║   ├── test-cases/    企业测试用例                    ║  │
+│  ║   ├── acc-trees/     探索产物                       ║  │
+│  ║   ├── auth/          登录态                         ║  │
+│  ║   ├── dictionaries/  企业项目字典                    ║  │
+│  ║   ├── screenshots/   截图                           ║  │
+│  ║   ├── reports/       测试报告                       ║  │
+│  ║   ├── traces/        Playwright Trace               ║  │
+│  ║   ├── logs/          日志                           ║  │
+│  ║   └── docs/          企业文档                       ║  │
+│  ╚═══════════════════════════════════════════════════╝  │
+└─────────────────────────────────────────────────────────┘
+```
+
+### 10.2 企业信息归类与风险等级
+
+| 信息类别 | 存放位置 | 典型内容 | 风险 |
+|---------|---------|------------|:---:|
+| **CodeHub 仓库信息** | `enterprise/configs/codehub/repo.yaml` | codehub 地址、branch 名、仓库命名空间 | 🔴 致命 |
+| **测试环境 URL** | `enterprise/environments/*.yaml` | 企业内网域名、IP、登录地址 | 🔴 致命 |
+| **测试账号** | `enterprise/environments/*.yaml` | 用户名、角色；密码通过 `${ENV_}` 外化 | 🔴 致命 |
+| **租户/组织信息** | `enterprise/environments/*.yaml` | 租户 ID、组织架构名 | 🟠 高危 |
+| **页面 Acc Tree** | `enterprise/acc-trees/*.yaml` | 企业内部系统页面结构、字段名 | 🟠 高危 |
+| **测试用例** | `enterprise/test-cases/*.yaml` | 内部业务流程步骤、验收标准 | 🟡 中危 |
+| **项目组件字典** | `enterprise/dictionaries/projects/*/` | 自研组件库前缀、CSS 类名 | 🟡 中危 |
+| **登录态** | `enterprise/auth/*.json` | Cookie / localStorage / session | 🔴 致命 |
+| **截图/报告** | `enterprise/screenshots/` `enterprise/reports/` | 内部系统截图、测试数据 | 🟠 高危 |
+
+### 10.3 .gitignore 关键规则
+
+```gitignore
+# ===== 信息安全：企业机密层（整目录禁止提交）=====
+/enterprise/
+
+# ===== 防御纵深（捕获意外移动到其他位置的企业文件）=====
+**/codehub/
+**/*.storage-state.json
+**/auth/*.json
+**/test-cases/*-enterprise-*.yaml
+
+# ===== 已有规则 =====
+node_modules/
+dist/
+.env
+.env.local
+*.log
+logs/
+coverage/
+.nyc_output/
+
+# ===== 项目字典（见 2.4 节）=====
+dictionaries/projects/
+```
+
+### 10.4 路径解析策略（`src/utils/paths.ts`）
+
+所有工具通过统一入口解析数据路径，自动选择企业层或开源默认层：
+
+```typescript
+/**
+ * 双层路径解析：企业覆盖优先，开源默认兜底
+ *
+ * 约定：
+ *   - 环境变量 ENTERPRISE_ROOT 指向 enterprise/ 目录
+ *   - 若未设置，默认根目录为项目根（开源模式）
+ *   - 所有工具读取数据文件时先检查 enterprise/ 是否存在对应文件
+ *     存在 → 用企业版，不存在 → 用开源默认
+ */
+export function resolvePath(category: string, name: string): string {
+  const root = process.env.ENTERPRISE_ROOT || process.cwd();
+  const enterprisePath = path.join(root, 'enterprise', category, name);
+  if (fs.existsSync(enterprisePath)) return enterprisePath;
+  return path.join(root, category, name);
+}
+
+// resolvePath('environments', 'test-env.yaml')
+//   → enterprise/environments/test-env.yaml (优先)
+//   → environments/test-env.yaml (fallback)
+```
+
+### 10.5 配置双层覆盖（`src/config/loader.ts`）
+
+```typescript
+/**
+ * 双层配置加载：
+ *   1. 先加载 mcp.config.yaml（开源默认）
+ *   2. 若 enterprise/configs/mcp.enterprise.yaml 存在 → 深度合并覆盖
+ */
+export function loadConfig(): McpConfig {
+  const baseConfig = loadYaml('mcp.config.yaml');
+  const enterpriseConfigPath = resolvePath('configs', 'mcp.enterprise.yaml');
+  if (fs.existsSync(enterpriseConfigPath)) {
+    return deepMerge(baseConfig, loadYaml(enterpriseConfigPath));
+  }
+  return baseConfig;
+}
+```
+
+**`mcp.enterprise.yaml` 覆盖示例**：
+
+```yaml
+# 企业级覆盖配置（仅覆盖与开源默认不同的部分）
+paths:
+  environments: "enterprise/environments"
+  test_cases: "enterprise/test-cases"
+  acc_trees: "enterprise/acc-trees"
+  auth_states: "enterprise/auth"
+  dictionaries: "enterprise/dictionaries"
+  screenshots: "enterprise/screenshots"
+  reports: "enterprise/reports"
+  traces: "enterprise/traces"
+
+browser:
+  headless: true                    # CI 强制无头
+  args:
+    - "--proxy-server=internal-proxy:8080"
+```
+
+### 10.6 源码硬编码隔离规则
+
+| 规则 | 说明 |
+|------|------|
+| **禁止在 src/ 中出现任何具体 URL** | URL 从 `environments/*.yaml` 读取 |
+| **禁止在 src/ 中出现账号/密码** | 密码仅通过 `${ENV_VAR}` 从环境变量注入 |
+| **禁止在 src/ 中出现内部域名/IP** | 外部访问端点全部可配置 |
+| **README.md 中的示例 URL** | 必须使用 `example.com` / `localhost` / `demo.test` 等非真实域名 |
+| **docs/ 中的截图** | 仅允许 demo 应用截图，不得出现企业内部系统界面 |
+| **dictionaries/base/ 中的 componentType** | 仅含开源 AUI 库（ant-/el-/n-/arco-），不得含企业自研组件库前缀 |
+
+### 10.7 Pre-commit Hook 自动拦截（`.husky/pre-commit`）
+
+```bash
+#!/bin/sh
+# 信息安全 Pre-commit Hook — 阻断 enterprise/ 目录的意外提交
+
+if git diff --cached --name-only | grep -q '^enterprise/'; then
+  echo "block: enterprise/ 目录中的文件禁止提交到 Git"
+  echo "   以下文件将被提交:"
+  git diff --cached --name-only | grep '^enterprise/'
+  echo "   请执行: git reset HEAD enterprise/"
+  exit 1
+fi
+```
+
+### 10.8 双层 Remote 工作流
+
+```bash
+# 家庭办公 — 单 remote 模式
+git remote -v
+# origin  https://github.com/WayneLiu519888/Agent-for-Web-UI-Automation-Testing.git
+
+# 企业内部 — 双 remote 模式
+git remote add internal https://codehub.internal.company.com/wayne/agent-webui-testing.git
+
+# 日常推送（企业内部网络）
+git push internal main     # 推企业内部 Git（企业内部自行管理 enterprise/）
+# ⚠️ 永远不要在企业网络内执行 git push origin main
+#    origin (GitHub) 仅在家庭网络推送
+```
+
+### 10.9 风险矩阵
+
+| 风险 | 场景 | 等级 | 缓解 |
+|------|------|:---:|------|
+| `enterprise/` 被误提交到 GitHub | 开发者忘记 .gitignore | 🔴 | Pre-commit hook + `.gitignore` 双重防护 |
+| 企业信息通过 force push 泄露 | 强制推送覆盖历史 | 🔴 | GitHub Branch Protection + force push 禁用 |
+| CodeHub 信息通过 commit 泄露 | commit 中写了内部 URL | 🟡 | Pre-commit hook + 团队规范 |
+| 配置路径硬编码在源码中 | 硬编码了 enterprise/ 路径 | 🟢 | `paths.ts` + Code Review |
+| 截图/报告/acc tree 残留 | 本地文件忘记清理 | 🟢 | 全在 `enterprise/` 下，一次 gitignore |
+
+---
+
+## 十一、待评审的关键决策
+
+1. ~~**Acc Tree YAML 的 locators 字段**~~ ✅
+2. ~~**测试用例 YAML 的 acc_tree_ref**~~ ✅
+3. ~~**用例格式复杂性**~~ ✅
+4. ~~**Excel→YAML 转换**~~ ✅
+5. ~~**底层原子工具重复**~~ ✅
+6. ~~**Acc Tree 采集深度**~~ ✅
+7. ~~**交互事件字典**~~ ✅
+8. ~~**事件字典可配置化**~~ ✅
+9. ~~**组件发现工具**~~ ✅
+10. ~~**信息安全分层设计**~~ 🆕 待评审 — 方案见第十章
+11. **并行隔离粒度** — 同组共享 Context，组间独立
+12. **events 字段升级** — `string[]` 保持，Phase 2+ 评估

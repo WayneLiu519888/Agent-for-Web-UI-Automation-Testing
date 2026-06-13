@@ -28,3 +28,11 @@ coverage/
 
 # 项目级交互事件字典（包含被测项目内部信息，禁止提交）
 dictionaries/projects/
+
+# ===== 信息安全：企业机密层（整目录禁止提交）=====
+/enterprise/
+
+# 防御纵深（捕获意外移动到其他位置的企业文件）
+**/codehub/
+**/*.storage-state.json
+**/auth/*.json
