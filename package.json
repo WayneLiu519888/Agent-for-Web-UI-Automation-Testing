@@ -32,6 +32,7 @@
     "@modelcontextprotocol/express": "2.0.0-alpha.2",
     "@modelcontextprotocol/node": "2.0.0-alpha.2",
     "@modelcontextprotocol/server": "2.0.0-alpha.2",
+    "@playwright/mcp": "^0.0.76",
     "express": "^5.2.0",
     "js-yaml": "^4.2.0",
     "playwright-core": "^1.60.0",
