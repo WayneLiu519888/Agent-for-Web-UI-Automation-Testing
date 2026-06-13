@@ -34,26 +34,28 @@
 <details open>
 <summary><strong>📋 快速指引</strong></summary>
 
-| 我想... | 看这里 |
-|:---|:---|
-| 快速把项目跑起来 | [🚀 快速开始](#-快速开始) |
-| 了解能做什么 | [🧠 核心概念](#-核心概念) |
-| 看有哪些工具可用 | [🛠️ 6 个 MCP 工具](#️-6-个-mcp-工具) |
-| 配置 Claude Desktop | [📥 安装方式](#-安装方式) |
-| 看完整的 2400+ 行设计蓝图 | [`.claude/plans/blueprint.plan.md`](.claude/plans/blueprint.plan.md) |
+<table width="100%">
+<tr><th width="40%">我想...</th><th>看这里</th></tr>
+<tr><td>快速把项目跑起来</td><td><a href="#-快速开始">🚀 快速开始</a></td></tr>
+<tr><td>了解能做什么</td><td><a href="#-核心概念">🧠 核心概念</a></td></tr>
+<tr><td>看有哪些工具可用</td><td><a href="#️-6-个-mcp-工具">🛠️ 6 个 MCP 工具</a></td></tr>
+<tr><td>配置 Claude Desktop</td><td><a href="#-安装方式">📥 安装方式</a></td></tr>
+<tr><td>看完整的 2400+ 行设计蓝图</td><td><a href=".claude/plans/blueprint.plan.md">📐 blueprint.plan.md</a></td></tr>
+</table>
 </details>
 
 ---
 
 ## 📦 包含内容
 
-| 分类 | 内容 | 文件数 |
-|------|------|:---:|
-| 🧠 **核心引擎** | Acc Tree 采集、交互事件推断、多策略定位器、YAML 读写 | 15 个 |
-| 🛠️ **MCP 工具** | init / explore / executor / generator / snapshot / scout | 6 个 |
-| 📖 **字典体系** | 65 种交互事件 + 20+ 声明式 match 规则 | 3 个 YAML |
-| 🔒 **安全分层** | 开源层(提交 GitHub) ↔ 企业机密层(.gitignore) | 双层 |
-| 🚀 **并行引擎** | 推理-执行分离 + 进程级 Worker Pool + 资源感知调度 | 4 个核心 |
+<table width="100%">
+<tr><th width="15%">分类</th><th width="55%">内容</th><th width="10%">文件数</th></tr>
+<tr><td>🧠 <strong>核心引擎</strong></td><td>Acc Tree 采集、交互事件推断、多策略定位器、YAML 读写</td><td align="center">15 个</td></tr>
+<tr><td>🛠️ <strong>MCP 工具</strong></td><td>init / explore / executor / generator / snapshot / scout</td><td align="center">6 个</td></tr>
+<tr><td>📖 <strong>字典体系</strong></td><td>65 种交互事件 + 20+ 声明式 match 规则</td><td align="center">3 个 YAML</td></tr>
+<tr><td>🔒 <strong>安全分层</strong></td><td>开源层(提交 GitHub) ↔ 企业机密层(.gitignore)</td><td align="center">双层</td></tr>
+<tr><td>🚀 <strong>并行引擎</strong></td><td>推理-执行分离 + 进程级 Worker Pool + 资源感知调度</td><td align="center">4 个核心</td></tr>
+</table>
 
 > 这不仅仅是一个 MCP Server。它是一个**从"测试人员人工操作浏览器"到"Agent 自主并行执行 20 个 Chromium"的效率革命**。
 
@@ -195,14 +197,15 @@ npm run dev:http
 
 ## 🛠️ 6 个 MCP 工具
 
-| 我想... | 使用此命令 | 工具 | 细节 |
-|:---|:---|:---|:---|
-| 一键初始化浏览器并自动登录 | `/web-init test-env` | `web-init` | 读取环境 YAML → 执行登录流程 → 保存登录态 |
-| 探索页面结构生成 Acc Tree | `/web-explore https://xxx --mode=deep` | `web-explore` | BFS 递归爬取同域页面 → 每个页面一个 YAML |
-| 并行执行测试用例 | `/exec-test test-cases/login/*.yaml` | `test-case-executor` | Phase 1 LLM 推理 → Phase 2 Worker Pool 执行 |
-| Excel 用例转 YAML | `/gen-cases test-cases/登录模块.xlsx` | `case-generator` | 智能列名匹配（中英文多别名） |
-| 获取当前页面增强快照 | `/snap` | `web-snapshot` | DOM + A11y + 几何 + 定位器 + 事件 |
-| 发现项目专属组件 | `/scout my-app --url=https://xxx` | `web-component-scout` | 交互式浏览 → 生成项目组件配置 |
+<table width="100%">
+<tr><th width="22%">我想...</th><th width="20%">使用此命令</th><th width="14%">工具</th><th>细节</th></tr>
+<tr><td>一键初始化浏览器并自动登录</td><td><code>/web-init test-env</code></td><td><code>web-init</code></td><td>读取环境 YAML → 执行登录流程 → 保存登录态</td></tr>
+<tr><td>探索页面结构生成 Acc Tree</td><td><code>/web-explore https://xxx --mode=deep</code></td><td><code>web-explore</code></td><td>BFS 递归爬取同域页面 → 每个页面一个 YAML</td></tr>
+<tr><td>并行执行测试用例</td><td><code>/exec-test test-cases/login/*.yaml</code></td><td><code>test-case-executor</code></td><td>Phase 1 LLM 推理 → Phase 2 Worker Pool 执行</td></tr>
+<tr><td>Excel 用例转 YAML</td><td><code>/gen-cases test-cases/登录模块.xlsx</code></td><td><code>case-generator</code></td><td>智能列名匹配（中英文多别名）</td></tr>
+<tr><td>获取当前页面增强快照</td><td><code>/snap</code></td><td><code>web-snapshot</code></td><td>DOM + A11y + 几何 + 定位器 + 事件</td></tr>
+<tr><td>发现项目专属组件</td><td><code>/scout my-app --url=https://xxx</code></td><td><code>web-component-scout</code></td><td>交互式浏览 → 生成项目组件配置</td></tr>
+</table>
 
 ### 工具 Visibility 分级
 
