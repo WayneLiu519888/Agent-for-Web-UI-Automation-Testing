@@ -12,12 +12,6 @@
   <img src="https://img.shields.io/badge/交互事件-65_events-yellow" alt="65 种交互事件">
 </p>
 
-<div align="center">
-
-**🌐 Language / 语言 / 言語**: [English](docs/en/README.md) | **[简体中文](README.md)** | [繁體中文](docs/zh-TW/README.md) | [日本語](docs/ja/README.md)
-
-</div>
-
 <h1 align="center">Agent-for-Web-UI-Automation-Testing</h1>
 
 <p align="center">
