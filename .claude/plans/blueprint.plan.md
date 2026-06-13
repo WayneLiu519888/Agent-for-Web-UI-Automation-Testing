@@ -361,16 +361,31 @@ tree:
 #### 2.1.4 采集算法
 
 ```
-Acc Tree 采集 = DOM 遍历（DFS）⊕ ARIA snapshot（DFS）→ 按位置+结构合并
+采集: 全量 DOM 遍历（DFS，不限 viewport）⊕ ARIA snapshot → 合并 → 过滤
 
-步骤：
-1. page.evaluate() 遍历 DOM → 采集 dom / geometry / text
+步骤:
+1. page.evaluate() 全量遍历 DOM → 采集 dom / geometry / text（不限视口）
 2. page.accessibility.snapshot() → 采集 a11y（role/name/checked/disabled...）
 3. 按 boundingBox + tagName + 层级 对两条树做结构对齐合并
 4. LocationBuilder：为每个元素生成多策略定位器
 5. 标记 actionable（可交互角色 + 可见 + 非 disabled + 有 box）
 6. Framework.detected：扫描 className 中的已知前缀（ant-/el-/n-/arco-/vxe-/a-/t-）
-7. 序列化为 YAML 写入磁盘
+7. ★ 过滤: 丢弃不可见节点(isVisible=false)和不可交互的纯容器节点
+       但保留其 children 中符合条件的节点（树结构不丢）
+8. 序列化为 YAML 写入磁盘
+```
+
+**过滤规则（关键）**：
+
+```
+YAML 中保留的节点:
+  ✓ isVisible = true 且 actionable = true    → 写入（可交互元素）
+  ✓ isVisible = true 且 role ∈ {heading, link, cell, rowheader, columnheader, listitem, tab, treeitem, menuitem} → 写入（可视语义元素）
+  ✓ isVisible = true 且包含符合条件的子节点    → 作为容器写入（结构完整性，但不展开自身属性）
+
+YAML 中丢弃的节点:
+  ✗ isVisible = false                        → 跳过（但检查其 children）
+  ✗ isVisible = true 但 role = generic/none 且无子节点 → 跳过（无用容器）
 ```
 
 #### 2.1.5 actionable 判定规则
@@ -393,13 +408,15 @@ function isActionable(node: AccTreeNode): boolean {
 
 #### 2.1.6 YAML 体积控制
 
-| 模式 | 输出内容 | 约行数/50元素 | 触发参数 |
-|------|---------|-------------|----------|
-| **完整** | 所有字段 | 400-600 行 | 默认 |
-| **紧凑** | ref + tagName + role + actionable + locators(仅 getByTestId + getByRole) | 60-80 行 | `web-snapshot --compact` |
-| **调试** | 完整 + rawAttributes | 700-900 行 | `--debug` |
+全量 DOM 采集但只写可见+可交互元素，一个典型中后台页面实际写入 50-200 个节点。
 
-其他控制：`text.innerText` / `text.textContent` 截断到 200 字符；`locators.xpath` 仅无其他有效定位器时生成。
+| 模式 | 输出字段 | 约行数 | 触发参数 |
+|------|---------|--------|----------|
+| **完整** | 所有字段（dom+a11y+geometry+locators+interaction+framework+text） | 300-600 行 | 默认 |
+| **紧凑** | ref + tagName + role + actionable + locators(仅 getByTestId + getByRole) | 40-80 行 | `web-snapshot --compact` |
+| **调试** | 完整 + rawAttributes（所有 HTML 属性） | 500-1000 行 | `--debug` |
+
+其他控制：`text.innerText` / `text.textContent` 统一截断到 200 字符；`locators.xpath` 仅在无其他有效定位器时生成。
 
 ---
 
@@ -871,13 +888,13 @@ browser:
 
 explorer:
   mode: "quick"
-  max_depth: 2
-  max_pages: 50
-  filter_exclude:
+  max_depth: 2                       # deep 模式最大爬取深度
+  max_pages: 50                      # deep 模式最大页面数（防无限爬虫）
+  filter_exclude:                    # URL 黑名单正则
     - "logout"
     - "/api/"
-  screenshot_on_explore: false
-  snapshot_compact: false
+  snapshot_compact: false            # false=完整AccTree / true=紧凑模式
+  # 采集策略: 全量DOM遍历 → 仅保留 isVisible=true 且 actionable/语义角色 的元素
 
 executor:
   max_parallel: 4                    # 硬上限
@@ -1010,4 +1027,4 @@ Agent-for-Web-UI-Automation-Testing/
 5. ~~**底层原子工具重复**~~ ✅ 已解决：砍掉 web-navigate/act/assert/state，全部委托 Playwright MCP
 6. **并行隔离粒度** — 同 par_group 共享 Context（快），不同组独立（安全），设计合理？→ **建议合理**
 7. **组件交互知识库** — Acc Tree v2 标记了 componentType（如 ant-select），是否需要维护 AUI 组件交互策略库？→ **建议 Phase 2-3 后根据实际体验决定**
-8. **Acc Tree 采集深度** — 默认 viewport 还是全量 DOM？→ **建议默认 viewport + 50 元素上限**
+8. ~~**Acc Tree 采集深度**~~ ✅ 已解决：**全量 DOM 遍历**（不限于 viewport），但**只保留可见 + 可交互元素**写入 YAML。不可见/纯容器节点跳过，但其 children 中符合条件的子节点保留（树结构不丢）
