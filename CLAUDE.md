@@ -54,4 +54,4 @@ src/
 所有密码/密钥通过 `${ENV_VAR}` 从环境变量注入，禁止硬编码到源码或 YAML 配置中。
 
 ## 蓝图
-完整设计蓝图：`.claude/plans/blueprint.plan.md` (~2500 行)
+完整设计蓝图：`docs/blueprint.plan.md` (~2500 行)

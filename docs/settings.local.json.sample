@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__plugin_context7_context7__resolve-library-id",
+      "mcp__plugin_context7_context7__query-docs",
+      "mcp__plugin_github_github__search_repositories",
+      "mcp__plugin_github_github__get_file_contents",
+      "Bash(cd *)",
+      "Bash(curl -sL \"https://raw.githubusercontent.com/xu-xiang/everything-claude-code-zh/main/README.md\")"
+    ]
+  }
+}
