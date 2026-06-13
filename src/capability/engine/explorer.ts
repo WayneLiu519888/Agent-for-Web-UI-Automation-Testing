@@ -1,10 +1,10 @@
 /**
  * 页面探索器 — 快速模式 + 深度模式（BFS 爬虫）
  */
-import type { AccTreeDocument, PageLink, AccTreeNode } from '../types/yaml.js';
+import type { AccTreeDocument, PageLink, AccTreeNode } from '../../types/yaml.js';
 import { createAccTreeDocument, buildAccTreeNode, domCollectScript } from './acc-tree.js';
 import { InteractionInferrer } from './interaction-inferrer.js';
-import { writeAccTree } from './yaml-writer.js';
+import { writeAccTree } from '../yaml/writer.js';
 import { loadConfig } from '../config/loader.js';
 
 export interface ExploreResult {

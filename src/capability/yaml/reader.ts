@@ -3,8 +3,8 @@
  */
 import * as fs from 'node:fs';
 import { load as yamlLoad } from 'js-yaml';
-import { resolvePath } from '../utils/paths.js';
-import type { TestCase, EnvironmentConfig, AccTreeDocument, ExecutionPlan } from '../types/yaml.js';
+import { resolvePath } from '../../utils/paths.js';
+import type { TestCase, EnvironmentConfig, AccTreeDocument, ExecutionPlan } from '../../types/yaml.js';
 
 /** YAML 读取异常 */
 class YamlReadError extends Error {

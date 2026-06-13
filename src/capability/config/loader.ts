@@ -3,7 +3,7 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { resolvePath } from '../utils/paths.js';
+import { resolvePath } from '../../utils/paths.js';
 
 export interface McpConfig {
   browser: {

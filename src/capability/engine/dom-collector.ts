@@ -2,7 +2,7 @@
  * DOM 采集器 — 供 web-component-scout 使用
  * 遍历页面所有元素 → 提取组件签名
  */
-import type { ComponentSample } from '../types/interaction-events.js';
+import type { ComponentSample } from '../../types/interaction-events.js';
 
 export interface DomCollectResult {
   samples: ComponentSample[];

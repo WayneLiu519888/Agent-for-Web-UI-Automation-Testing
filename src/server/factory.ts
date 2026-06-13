@@ -10,7 +10,7 @@
  */
 
 import { McpServer } from '@modelcontextprotocol/server';
-import { ALL_TOOLS } from '../tools/registry.js';
+import { ALL_TOOLS } from '../capability/tools/registry.js';
 import { VISIBILITY_MAP, type TransportType } from '../types/tool.js';
 
 /**

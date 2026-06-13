@@ -3,7 +3,7 @@
  */
 import * as path from 'node:path';
 import * as fs from 'node:fs';
-import type { ComponentDiscovery } from '../types/interaction-events.js';
+import type { ComponentDiscovery } from '../../types/interaction-events.js';
 
 export interface DiscoveryReport {
   project: string;

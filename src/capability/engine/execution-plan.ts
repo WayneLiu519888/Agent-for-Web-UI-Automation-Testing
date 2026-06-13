@@ -1,7 +1,7 @@
 /**
  * 执行计划生成器 — Phase 1 LLM 推理产出
  */
-import type { ExecutionPlan, ExecutionStep, TestCase } from '../types/yaml.js';
+import type { ExecutionPlan, ExecutionStep, TestCase } from '../../types/yaml.js';
 
 /**
  * 从测试用例 + 可选的 Acc Tree 生成执行计划

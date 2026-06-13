@@ -1,9 +1,9 @@
 /**
  * 组件分析器 — 对照 base/controls.yaml 标记已知/未知
  */
-import { InteractionInferrer } from './interaction-inferrer.js';
-import type { ComponentDiscovery, ComponentSample } from '../types/interaction-events.js';
-import type { ControlRule } from '../types/interaction-events.js';
+import { InteractionInferrer } from '../engine/interaction-inferrer.js';
+import type { ComponentDiscovery, ComponentSample } from '../../types/interaction-events.js';
+import type { ControlRule } from '../../types/interaction-events.js';
 
 export class ComponentAnalyzer {
   private inferrer: InteractionInferrer;

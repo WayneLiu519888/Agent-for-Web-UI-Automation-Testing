@@ -5,8 +5,8 @@
 import type {
   AccTreeNode, DomInfo, DomAttributes, A11yInfo, GeometryInfo,
   Locators, FrameworkInfo, TextContent, AccTreeDocument, PageLink,
-} from '../types/yaml.js';
-import type { InteractionInfo } from '../types/interaction-events.js';
+} from '../../types/yaml.js';
+import type { InteractionInfo } from '../../types/interaction-events.js';
 import { InteractionInferrer } from './interaction-inferrer.js';
 
 const emptyDomAttrs = (): DomAttributes => ({

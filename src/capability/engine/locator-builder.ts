@@ -2,7 +2,7 @@
  * 多策略定位器构建器
  * 从 AccTreeNode 提取所有 Playwright Locator 候选
  */
-import type { AccTreeNode, CssLocator, Locators } from '../types/yaml.js';
+import type { AccTreeNode, CssLocator, Locators } from '../../types/yaml.js';
 
 export function buildLocators(node: AccTreeNode): Locators {
   const d = node.dom;

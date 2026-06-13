@@ -13,7 +13,7 @@
  */
 
 import * as z from 'zod/v4';
-import type { ToolDefinition } from '../types/tool.js';
+import type { ToolDefinition } from '../../types/tool.js';
 
 function def(tool: ToolDefinition): ToolDefinition {
   return tool;

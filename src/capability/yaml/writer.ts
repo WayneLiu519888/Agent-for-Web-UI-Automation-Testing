@@ -4,9 +4,9 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { dump as yamlDump } from 'js-yaml';
-import { resolveDir } from '../utils/paths.js';
-import type { AccTreeDocument, ExecutionPlan, TestReport } from '../types/yaml.js';
-import type { ComponentDiscovery } from '../types/interaction-events.js';
+import { resolveDir } from '../../utils/paths.js';
+import type { AccTreeDocument, ExecutionPlan, TestReport } from '../../types/yaml.js';
+import type { ComponentDiscovery } from '../../types/interaction-events.js';
 
 export function writeAccTree(doc: AccTreeDocument, outputDir?: string): string {
   const dir = outputDir || resolveDir('acc-trees');

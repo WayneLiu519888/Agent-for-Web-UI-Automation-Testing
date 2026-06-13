@@ -4,9 +4,9 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { resolvePath } from '../utils/paths.js';
-import type { AccTreeNode } from '../types/yaml.js';
-import type { InteractionEvent, InteractionInfo, ControlRule, InteractionConstraints } from '../types/interaction-events.js';
+import { resolvePath } from '../../utils/paths.js';
+import type { AccTreeNode } from '../../types/yaml.js';
+import type { InteractionEvent, InteractionInfo, ControlRule, InteractionConstraints } from '../../types/interaction-events.js';
 import { load as yamlLoad } from 'js-yaml';
 
 export class InteractionInferrer {

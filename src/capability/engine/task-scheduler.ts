@@ -1,7 +1,7 @@
 /**
  * 任务调度器 — 优先级队列 + par_group 亲和性 + 工作窃取
  */
-import type { ExecutionPlan } from '../types/yaml.js';
+import type { ExecutionPlan } from '../../types/yaml.js';
 import { loadConfig } from '../config/loader.js';
 
 export interface TaskItem {

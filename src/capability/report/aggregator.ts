@@ -1,8 +1,8 @@
 /**
  * 报告聚合器 — 收集所有 Worker 结果 → 生成 TestReport
  */
-import type { TestReport, CaseResult } from '../types/yaml.js';
-import { writeTestReport } from './yaml-writer.js';
+import type { TestReport, CaseResult } from '../../types/yaml.js';
+import { writeTestReport } from '../yaml/writer.js';
 
 export class ReportAggregator {
   private results: CaseResult[] = [];
