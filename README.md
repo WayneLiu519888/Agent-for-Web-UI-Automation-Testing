@@ -223,35 +223,34 @@ npm run dev:http
 
 <table width="100%">
 <tr><th width="12%">平台</th><th width="20%">命令注册目录</th><th width="8%">命令数</th><th>文件示例</th></tr>
-<tr><td><strong>Claude Code</strong></td><td><code>.claude/commands/</code></td><td align="center">6</td><td><code>web_init.md</code> — 含 YAML frontmatter + arguments 声明</td></tr>
-<tr><td><strong>OpenCode</strong></td><td><code>.opencode/commands/</code></td><td align="center">6</td><td><code>web_init.md</code> — 含 $ARG 参数语法</td></tr>
-<tr><td><strong>Codex</strong></td><td><code>.codex/skills/&lt;name&gt;/SKILL.md</code></td><td align="center">6</td><td><code>SKILL.md</code> — 含 YAML frontmatter name/description</td></tr>
+<tr><td><strong>Claude Code</strong></td><td><code>AgentCommands/claudeCodeCommands/</code></td><td align="center">6</td><td><code>web_init.md</code> — 含 YAML frontmatter + arguments 声明</td></tr>
+<tr><td><strong>OpenCode</strong></td><td><code>AgentCommands/openCodeCommands/</code></td><td align="center">6</td><td><code>web_init.md</code> — 含 $ARG 参数语法</td></tr>
+<tr><td><strong>Codex</strong></td><td><code>AgentCommands/codexSkills/&lt;name&gt;/SKILL.md</code></td><td align="center">6</td><td><code>SKILL.md</code> — 含 YAML frontmatter name/description</td></tr>
 </table>
 
 ```
-.claude/commands/          ← Claude Code 斜杠命令（自动发现）
-├── web_init.md
-├── web_explore.md
-├── exec_test.md
-├── gen_cases.md
-├── snap.md
-└── scout.md
-
-.opencode/commands/        ← OpenCode 命令
-├── web_init.md
-├── web_explore.md
-├── exec_test.md
-├── gen_cases.md
-├── snap.md
-└── scout.md
-
-.codex/skills/             ← Codex 技能（每技能一个子目录）
-├── web-init/SKILL.md
-├── web-explore/SKILL.md
-├── test-case-executor/SKILL.md
-├── case-generator/SKILL.md
-├── web-snapshot/SKILL.md
-└── web-component-scout/SKILL.md
+AgentCommands/
+├── claudeCodeCommands/          ← Claude Code 斜杠命令
+│   ├── web_init.md
+│   ├── web_explore.md
+│   ├── exec_test.md
+│   ├── gen_cases.md
+│   ├── snap.md
+│   └── scout.md
+│
+├── openCodeCommands/            ← OpenCode 命令
+│   ├── web_init.md
+│   ├── web_explore.md
+│   ├── exec_test.md
+│   ├── gen_cases.md
+│   ├── snap.md
+│   └── scout.md
+│
+└── codexSkills/                 ← Codex 技能 + config.toml
+    ├── config.toml
+    ├── case-generator/SKILL.md
+    ├── web-snapshot/SKILL.md
+    └── web-component-scout/SKILL.md
 ```
 
 > 📖 完整工具设计见 [蓝图第三章](.claude/plans/blueprint.plan.md)
