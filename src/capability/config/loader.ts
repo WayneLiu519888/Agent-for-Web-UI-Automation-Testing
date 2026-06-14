@@ -38,6 +38,7 @@ export interface McpConfig {
   };
   report: { format: string; include_screenshots: boolean; include_traces: boolean; webhook_url: string | null };
   logging: { level: string; file: string; max_size: string; max_files: number };
+  ip_whitelist: string[];
 }
 
 const defaultConfig: McpConfig = {
@@ -71,6 +72,7 @@ const defaultConfig: McpConfig = {
   },
   report: { format: 'json', include_screenshots: true, include_traces: false, webhook_url: null },
   logging: { level: 'info', file: 'logs/mcp-server.log', max_size: '10MB', max_files: 5 },
+  ip_whitelist: ['127.0.0.1', '::1'],
 };
 
 function deepMerge(base: any, override: any): any {

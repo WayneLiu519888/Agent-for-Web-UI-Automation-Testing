@@ -2,47 +2,79 @@
 /**
  * HTTP Streamable 传输入口
  *
- * 安全策略：HTTP 模式下必须设置 MCP_API_KEY，否则 process.exit(1)。
- * 因为 HTTP 端点可被远程访问，无认证运行等同于未授权任意代码执行。
+ * 安全策略：IP 白名单 — 仅允许配置文件中指定的 IP 地址访问 /mcp 端点。
+ * 白名单在 mcp.config.yaml 的 ip_whitelist 字段中配置，默认仅允许本机回环地址。
  */
 
 import { createMcpExpressApp } from "@modelcontextprotocol/express";
 import { NodeStreamableHTTPServerTransport } from "@modelcontextprotocol/node";
 import { createMcpServer } from "../server/factory.js";
+import { loadConfig } from "../capability/config/loader.js";
 import type { Request, Response, NextFunction } from "express";
 
-function authMiddleware(apiKey: string) {
+/**
+ * IP 白名单中间件
+ * 从请求中提取客户端 IP，与配置的白名单精确匹配。
+ * 不在白名单中的 IP 返回 403。
+ */
+function ipWhitelistMiddleware(whitelist: string[]) {
   return (req: Request, res: Response, next: NextFunction) => {
-    const auth = req.headers.authorization;
-    if (!auth || !auth.startsWith("Bearer ") || auth.slice(7) !== apiKey) {
-      res.status(401).json({ error: "Unauthorized — 需要有效的 Bearer Token" });
+    // Express 的 req.ip 已经是规范化后的 IP（去掉 IPv6 前缀等）
+    const clientIp = req.ip || req.socket.remoteAddress || '';
+
+    // 精确匹配
+    const allowed = whitelist.some(entry => {
+      // 支持 CIDR 子网匹配
+      if (entry.includes('/')) {
+        return ipInCIDR(clientIp, entry);
+      }
+      return clientIp === entry;
+    });
+
+    if (!allowed) {
+      res.status(403).json({
+        error: "Forbidden — 客户端 IP 不在白名单中",
+        ip: clientIp,
+      });
       return;
     }
     next();
   };
 }
 
-async function main() {
-  const apiKey = process.env.MCP_API_KEY;
+/**
+ * 简易 CIDR 匹配（仅支持 /8, /16, /24, /32 等整字节掩码）
+ */
+function ipInCIDR(ip: string, cidr: string): boolean {
+  const [range, bitsStr] = cidr.split('/');
+  const bits = parseInt(bitsStr, 10);
+  if (isNaN(bits)) return false;
 
-  if (!apiKey) {
-    console.error("=".repeat(72));
-    console.error("[MCP HTTP] 启动失败 — MCP_API_KEY 环境变量未设置");
-    console.error("");
-    console.error("HTTP 模式下 MCP_API_KEY 为必填项。请设置环境变量后重试：");
-    console.error("");
-    console.error("  Windows (PowerShell):  $env:MCP_API_KEY=\"your-api-key\"");
-    console.error("  Windows (CMD):          set MCP_API_KEY=your-api-key");
-    console.error("  macOS / Linux:          export MCP_API_KEY=\"your-api-key\"");
-    console.error("");
-    console.error("=".repeat(72));
-    process.exit(1);
-  }
+  // 将 IP 转换为 32 位整数比较
+  const ipNum = ip4ToInt(ip);
+  const rangeNum = ip4ToInt(range);
+  if (ipNum === null || rangeNum === null) return false;
+
+  const mask = ~(2 ** (32 - bits) - 1) >>> 0; // 无符号 32 位掩码
+  return (ipNum & mask) === (rangeNum & mask);
+}
+
+function ip4ToInt(ip: string): number | null {
+  const parts = ip.split('.');
+  if (parts.length !== 4) return null;
+  const nums = parts.map(Number);
+  if (nums.some(n => isNaN(n) || n < 0 || n > 255)) return null;
+  return ((nums[0] << 24) | (nums[1] << 16) | (nums[2] << 8) | nums[3]) >>> 0;
+}
+
+async function main() {
+  const config = loadConfig();
+  const whitelist = config.ip_whitelist;
+
+  console.log('[MCP HTTP] IP 白名单:', whitelist.join(', '));
 
   const mcpServer = createMcpServer("http");
   const app = createMcpExpressApp();
-
-  console.log("[MCP HTTP] 已启用 Bearer Token 认证");
 
   const handleMcpRequest = async (req: Request, res: Response) => {
     const transport = new NodeStreamableHTTPServerTransport({
@@ -53,7 +85,7 @@ async function main() {
     await transport.handleRequest(req, res, req.body);
   };
 
-  app.post("/mcp", authMiddleware(apiKey), handleMcpRequest);
+  app.post("/mcp", ipWhitelistMiddleware(whitelist), handleMcpRequest);
 
   app.get("/health", (_req, res) => {
     res.json({ status: "ok" });

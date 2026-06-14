@@ -69,3 +69,11 @@ logging:
   file: "logs/mcp-server.log"
   max_size: "10MB"
   max_files: 5
+
+# HTTP 传输安全：IP 白名单
+# 仅允许列表中指定的 IP 地址访问 /mcp 端点。
+# 支持精确 IP（如 192.168.1.100）和 CIDR 子网（如 10.0.0.0/8）。
+# 默认仅允许本机回环地址。添加远程客户端 IP 后重启服务生效。
+ip_whitelist:
+  - "127.0.0.1"
+  - "::1"

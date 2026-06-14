@@ -74,30 +74,21 @@ src/
 
 ## 安全配置
 
-### Chromium 沙箱 (C1)
+### IP 白名单
+- HTTP 传输模式下，`/mcp` 端点仅允许 `mcp.config.yaml` 的 `ip_whitelist` 中配置的 IP 地址访问
+- 支持精确 IP（如 `192.168.1.100`）和 CIDR 子网（如 `10.0.0.0/8`）
+- 默认仅允许本机回环地址 `127.0.0.1` 和 `::1`
+- 非白名单 IP 返回 HTTP 403
+- 参见 `src/entries/http.ts` 中的 `ipWhitelistMiddleware()`
+
+### Chromium 沙箱
 - 默认启用 Chromium 安全沙箱
 - 仅在 Docker/CI 容器环境中通过 `CHROMIUM_SANDBOX=false` 禁用
 - 任何来自 YAML 配置的 `--no-sandbox` 都会被运行时逻辑清理，除非显式设置环境变量
-- 参见 `src/capability/config/loader.ts` 中的 `applySandboxConfig()`
 
-### HTTP 认证 (H3)
-- HTTP 传输模式下 `MCP_API_KEY` 为**必填**环境变量，未设置时 `process.exit(1)` 拒绝启动
-- 原因：/mcp 端点可被远程访问，无认证运行允许攻击者任意调用 MCP 工具
-- 健康检查端点 `/health` 无需认证
-
-### 密码注入机制 (H4)
+### 密码注入机制
 - `resolveEnvVars()` 递归遍历配置对象，将所有 `${VAR_NAME}` 替换为 `process.env[VAR_NAME]`
 - 若引用的环境变量未设置，保留原始占位符并输出 `console.warn`
-- 此机制覆盖所有配置字段（包括但不限于 password、api_key 等敏感字段）
-
-### xlsx 依赖已知风险 (C2, P1)
-- 依赖 xlsx (SheetJS) 社区版，该库已停维且存在已知原型污染漏洞 (GHSA-4r6h-8v6p-xvw6)
-- 缓解策略：
-  1. `convertXlsxToYaml()` 入口处强制文件大小限制 (10MB)
-  2. 仅允许 `.xlsx` / `.xls` 扩展名白名单
-  3. 通过 .gitignore 限制输入文件来源，不接受来自不可信来源的 Excel 文件
-- 长期方案：评估迁移至 ExcelJS 或仅接受 YAML 输入
-- 参见 `src/capability/excel/converter.ts`
 
 
 ## 蓝图
