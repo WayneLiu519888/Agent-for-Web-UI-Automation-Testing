@@ -7,7 +7,7 @@
   <img src="https://img.shields.io/badge/Apache-2.0-9966FF?logo=apache" alt="Apache-2.0 License">
   <br/>
   <img src="https://img.shields.io/badge/TypeScript-zero_errors-informational?logo=typescript" alt="TypeScript 零错误">
-  <img src="https://img.shields.io/badge/核心引擎-15_files-blueviolet" alt="15 个核心文件">
+  <img src="https://img.shields.io/badge/核心引擎-2_files-blueviolet" alt="15 个核心文件">
   <img src="https://img.shields.io/badge/MCP工具-6_tools-critical" alt="6 个 MCP 工具">
   <img src="https://img.shields.io/badge/交互事件-65_events-yellow" alt="65 种交互事件">
 </p>
@@ -43,13 +43,13 @@
 
 | 分类 | 内容 | 文件数 |
 |------|------|:---:|
-| 🧠 **核心引擎** | Acc Tree 采集、交互事件推断、多策略定位器、YAML 读写 | 15 个 |
-| 🛠️ **MCP 工具** | init / explore / executor / generator / snapshot / scout | 6 个 |
-| 📖 **字典体系** | 65 种交互事件 + 20+ 声明式 match 规则 | 3 个 YAML |
+| 🧠 **核心引擎** | Acc Tree 4扁维采集 + 内联交互事件推断（~50行） | 2 个 |
+| 🛠️ **MCP 工具** | web-snapshot（其余工具蓝图预留） | 1 个已实现 |
+| 📖 **字典体系** | 65 种交互事件 + 20+ match 规则（保留参考，v0.1 不再运行时加载） | 2 个 YAML |
 | 🔒 **安全分层** | 开源层(提交 GitHub) ↔ 企业机密层(.gitignore) | 双层 |
-| 🚀 **并行引擎** | 推理-执行分离 + 进程级 Worker Pool + 资源感知调度 | 4 个核心 |
+| 🚀 **并行引擎** | 推理-执行分离 + 进程级 Worker Pool（蓝图预留，当前版本未实现） | 0 个 |
 
-> 这不仅仅是一个 MCP Server。它是一个**从"测试人员人工操作浏览器"到"Agent 自主并行执行 20 个 Chromium"的效率革命**。
+> v0.1 精简版：从 193 行 + 2 个 YAML 字典(624行) 精简为 50 行内联映射；Acc Tree 从 8 维精简为 4 扁维。简单、实用、免维护。
 
 ---
 
@@ -76,7 +76,7 @@
 
 > 📐 **为什么这样设计？** Playwright MCP 已经有 23 个成熟的浏览器操作工具，我们不做重复轮子。我们的 6 个工具专注于**编排层**——环境初始化、页面探索工作流、用例推理调度、并行执行管理。
 
-### 推理-执行分离（核心突破）
+### 推理-执行分离（蓝图预留）
 
 ```
 Phase 1 — LLM 批量推理 (主进程, 约 1-3 min)
@@ -92,23 +92,19 @@ Phase 3 — 按需补救 (LLM)
   失败用例 → 错误截图 + Acc Tree → LLM → Worker 重试
 ```
 
-> 💡 **关键**：Phase 1 集中推理一次，Phase 2 就可以**完全无 LLM** 地并行——这是突破 LLM rate limit 瓶颈的唯一方式。
+> ⚠️ **蓝图预留**：当前版本(v0.1)仅实现交互事件推断和 Acc Tree 采集。Worker Pool / TaskScheduler / ResourceDetector 为蓝图预留功能，已从代码中删除。
 
-### Acc Tree 8 维融合快照
+### Acc Tree 4 扁维融合快照
 
-每个页面元素采集：`DOM` + `A11y` + `Geometry` + `Locators` + `Interaction` + `Framework` + `Text` + `Children`
+每个页面元素采集：`locators` + `a11y+text` + `geometry` + `interaction`（从原始 8 维精简）
 
 > 📖 详见 [蓝图第二章](docs/blueprint.plan.md)
 
-### 交互事件字典（可配置）
+### 交互事件推断（内联映射）
 
-```
-dictionaries/
-├── base/events.yaml      # 65 种交互事件注册表（11 类别）
-└── base/controls.yaml    # 20+ 声明式 match 规则引擎
-```
+v0.1 版本将交互事件推断从三级字典（624行）精简为内联 `ROLE_EVENT_MAP`（~50行，约 16 个 ARIA role 映射）。字典文件保留在 `dictionaries/` 仅供参考，不再运行时加载。
 
-**三级优先级**：`_overrides.yaml (人工)` → `components.yaml (自动)` → `base/controls.yaml (默认)`
+**映射逻辑**：`ARIA role` + `componentPrefix` → `InteractionEvent[]`
 
 ---
 
@@ -240,28 +236,18 @@ Agent-for-Web-UI-Automation-Testing/
 │   └── projects/                #   项目字典 — .gitignore
 │
 ├── src/
-│   ├── types/                   #   类型定义 (tool.ts / interaction-events.ts / yaml.ts)
+│   ├── types/                   #   类型定义 (tool.ts / interaction-events.ts / yaml.ts / errors.ts)
 │   ├── utils/paths.ts           #   双层路径解析（企业覆盖优先）
 │   ├── server/factory.ts        #   McpServer 工厂（按 transport 过滤工具）
 │   ├── entries/stdio.ts + http.ts  # 双入口
-│   └── capability/              #   能力层 — 两层架构重构
-│       ├── engine/              #   9 个核心引擎文件
-│       │   ├── acc-tree.ts      #     Acc Tree 增强采集
-│       │   ├── interaction-inferrer.ts  # 配置驱动事件推断
-│       │   ├── locator-builder.ts       # 多策略定位器
-│       │   ├── explorer.ts      #     BFS 页面探索
-│       │   ├── execution-plan.ts#     执行计划生成
-│       │   ├── worker-pool-manager.ts   # 进程级 Worker Pool
-│       │   ├── task-scheduler.ts        # 优先级队列 + 工作窃取
-│       │   ├── resource-detector.ts     # 机器资源检测
-│       │   └── dom-collector.ts         # DOM 采集
-│       ├── playwright/          #   Playwright 封装 (pw-tools.ts + adapter.ts)
-│       ├── yaml/                #   YAML 读写 (reader.ts + writer.ts)
-│       ├── excel/               #   Excel 转换 (parser.ts + converter.ts)
-│       ├── config/              #   配置加载 (loader.ts + generator.ts)
-│       ├── report/              #   报告生成 (aggregator.ts + writer.ts)
+│   └── capability/              #   能力层
+│       ├── engine/              #   核心引擎（2 个文件）
+│       │   ├── acc-tree.ts      #     Acc Tree 4扁维采集 + 内联 domCollectScript
+│       │   └── interaction-inferrer.ts  # 内联 ROLE_EVENT_MAP 事件推断 (~50行)
+│       ├── yaml/                #   YAML IO (io.ts)
+│       ├── config/              #   配置加载 (loader.ts)
 │       ├── analysis/            #   组件分析 (component-analyzer.ts + component-scout.ts)
-│       └── tools/               #   MCP 工具注册 (registry.ts + index.ts)
+│       └── tools/               #   MCP 工具注册 (registry.ts)
 │
 ├── enterprise/                  # ★ 企业机密层 — .gitignore 整目录
 │   ├── configs/mcp.enterprise.yaml

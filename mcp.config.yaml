@@ -1,13 +1,6 @@
 browser:
-  channel: "chromium"
   headless: true
   viewport: { width: 1920, height: 1080 }
-  locale: "zh-CN"
-  timezone: "Asia/Shanghai"
-  args:
-    - "--disable-dev-shm-usage"
-  # Chromium 沙箱默认启用。如需在 Docker/CI 容器中禁用沙箱，
-  # 设置环境变量 CHROMIUM_SANDBOX=false
 explorer:
   mode: "quick"
   max_depth: 2
@@ -15,55 +8,20 @@ explorer:
   filter_exclude:
     - "logout"
     - "/api/"
-  snapshot_compact: false
 executor:
   plan_mode: "sprint"
   llm_max_concurrency: 4
   batch_size: 10
   plan_timeout_ms: 60000
-  worker_pool:
-    max_workers: "auto"
-    min_workers: 1
-    initial_workers: "auto"
-    spawn_interval_ms: 800
-    resource_check:
-      enabled: true
-      interval_ms: 5000
-      memory_low_watermark_mb: 1024
-      memory_high_watermark_mb: 2048
-    lifecycle:
-      heartbeat_interval_ms: 3000
-      heartbeat_timeout_ms: 15000
-      max_consecutive_crashes: 3
-      crash_backoff_base_ms: 5000
-      restart_after_n_tasks: 10
-      task_timeout_ms: 120000
-    work_stealing: true
-    group_affinity: "soft"
   retry: 1
-  stop_on_critical_failure: true
   action_timeout: 10000
   navigation_timeout: 30000
   expect_timeout: 5000
-  screenshot_on_failure: true
   trace_on_failure: true
   per_worker_request_delay_ms: 100
-  report:
-    realtime_progress: true
-    aggregate_timeout_ms: 300000
-paths:
-  environments: "environments"
-  acc_trees: "acc-trees"
-  test_cases: "test-cases"
-  auth_states: "auth"
-  screenshots: "screenshots"
-  reports: "reports"
-  traces: "traces"
 report:
-  format: "json"
   include_screenshots: true
   include_traces: false
-  webhook_url: null
 logging:
   level: "info"
   file: "logs/mcp-server.log"
@@ -71,9 +29,6 @@ logging:
   max_files: 5
 
 # HTTP 传输安全：IP 白名单
-# 仅允许列表中指定的 IP 地址访问 /mcp 端点。
-# 支持精确 IP（如 192.168.1.100）和 CIDR 子网（如 10.0.0.0/8）。
-# 默认仅允许本机回环地址。添加远程客户端 IP 后重启服务生效。
 ip_whitelist:
   - "127.0.0.1"
   - "::1"

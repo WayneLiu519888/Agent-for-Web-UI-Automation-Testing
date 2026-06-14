@@ -36,7 +36,6 @@
     "express": "^5.2.0",
     "js-yaml": "^4.2.0",
     "playwright-core": "^1.60.0",
-    "xlsx": "^0.18.5",
     "zod": "^4.2.0"
   },
   "devDependencies": {

@@ -1,167 +1,99 @@
 /**
- * 交互事件推断器（配置驱动）
- * 三级优先级: _overrides.yaml > components.yaml > base/controls.yaml
+ * 交互事件推断器（内联映射版）
+ * 从三级字典(624行)精简为内联 role→events 映射表(~50行)
  */
-import * as fs from 'node:fs';
-import * as path from 'node:path';
-import { resolvePath } from '../../utils/paths.js';
 import type { AccTreeNode } from '../../types/yaml.js';
-import type { InteractionEvent, InteractionInfo, ControlRule, InteractionConstraints } from '../../types/interaction-events.js';
-import { load as yamlLoad } from 'js-yaml';
+import type { InteractionEvent, InteractionInfo, InteractionConstraints } from '../../types/interaction-events.js';
+
+/** ARIA role → 交互事件映射表（约 16 个核心 role） */
+const ROLE_EVENT_MAP: Record<string, InteractionEvent[]> = {
+  'button':     ['click', 'focus', 'blur'],
+  'link':       ['click', 'focus', 'blur'],
+  'textbox':    ['fill', 'clear', 'focus', 'blur', 'press_key'],
+  'searchbox':  ['fill', 'clear', 'type_char_by_char', 'focus', 'blur', 'press_key'],
+  'combobox':   ['open_dropdown', 'close_dropdown', 'select_single', 'focus', 'blur'],
+  'listbox':    ['open_dropdown', 'close_dropdown', 'select_single', 'focus', 'blur'],
+  'checkbox':   ['check', 'uncheck', 'toggle', 'focus', 'blur', 'press_key'],
+  'radio':      ['check', 'toggle', 'focus', 'blur', 'press_key'],
+  'switch':     ['turn_on', 'turn_off', 'toggle', 'focus', 'blur'],
+  'slider':     ['set_value', 'drag_to', 'increment', 'decrement', 'focus', 'blur'],
+  'spinbutton': ['set_value', 'increment', 'decrement', 'focus', 'blur'],
+  'tab':        ['click', 'focus', 'blur'],
+  'treeitem':   ['expand', 'collapse', 'select_item', 'click'],
+  'menuitem':   ['click', 'select_item', 'hover', 'focus', 'blur'],
+  'menuitemcheckbox': ['click', 'select_item', 'hover', 'focus', 'blur'],
+  'menuitemradio':    ['click', 'select_item', 'hover', 'focus', 'blur'],
+  'option':     ['click', 'select_single'],
+  'gridcell':   ['click', 'focus'],
+  'rowheader':  ['click', 'focus'],
+  'columnheader': ['click', 'focus', 'blur'],
+};
+
+/** 组件类型 → 额外事件（基于 componentPrefix / className 追加） */
+const COMPONENT_EXTRA_EVENTS: Record<string, InteractionEvent[]> = {
+  'pagination': ['paginate'],
+  'picker':     ['pick_date'],
+  'date-picker': ['pick_date'],
+  'cascader':   ['expand', 'collapse'],
+  'select':     ['search_and_select'],
+};
+
+/** 可交互的 ARIA role 集合 */
+const INTERACTIVE_ROLES = new Set([
+  'button', 'link', 'textbox', 'searchbox', 'combobox',
+  'checkbox', 'radio', 'menuitem', 'menuitemcheckbox',
+  'menuitemradio', 'option', 'switch', 'tab', 'slider',
+  'spinbutton', 'listbox', 'gridcell', 'rowheader', 'columnheader',
+  'treeitem',
+]);
 
 export class InteractionInferrer {
-  /** 字典加载过程中的累积错误信息，供外部监控/诊断 */
-  public loadErrors: string[] = [];
-
-  private baseControls: ControlRule[] = [];
-  private projectComponents: Map<string, string[]> = new Map();
-  private removeEvents: Map<string, Set<string>> = new Map();
-  private overrideComponents: Map<string, string[]> = new Map();
-  private interactiveRoles: Set<string> = new Set([
-    'button', 'link', 'textbox', 'searchbox', 'combobox',
-    'checkbox', 'radio', 'menuitem', 'menuitemcheckbox',
-    'menuitemradio', 'option', 'switch', 'tab', 'slider',
-    'spinbutton', 'listbox', 'gridcell', 'rowheader', 'columnheader',
-    'treeitem',
-  ]);
-
-  constructor(dictDir?: string, projectName?: string) {
-    const dir = dictDir || path.join(process.cwd(), 'dictionaries');
-    this.loadBaseControls(path.join(dir, 'base'));
-    if (projectName) {
-      this.loadProjectDict(path.join(dir, 'projects', projectName));
-    }
-  }
-
-  private loadBaseControls(baseDir: string) {
-    const filePath = path.join(baseDir, 'controls.yaml');
-    try {
-      const raw = yamlLoad(fs.readFileSync(filePath, 'utf8')) as any;
-      if (raw?.rules) this.baseControls = raw.rules;
-    } catch (err: unknown) {
-      const msg = `基础控件字典加载失败 (${filePath}): ${(err as Error)?.message || err}`;
-      console.warn('[InteractionInferrer]', msg);
-      this.loadErrors.push(msg);
-    }
-  }
-
-  private loadProjectDict(projectDir: string) {
-    try {
-      // components.yaml
-      const compPath = path.join(projectDir, 'components.yaml');
-      const compRaw = yamlLoad(fs.readFileSync(compPath, 'utf8')) as any;
-      if (compRaw?.components) {
-        for (const c of compRaw.components) {
-          if (c.events) this.projectComponents.set(c.id, c.events);
-        }
-      }
-      // _overrides.yaml
-      const ovPath = path.join(projectDir, '_overrides.yaml');
-      const ov = yamlLoad(fs.readFileSync(ovPath, 'utf8')) as any;
-      if (ov?.override) {
-        for (const o of ov.override) this.overrideComponents.set(o.component, o.events);
-      }
-      if (ov?.add_events) {
-        for (const a of ov.add_events) {
-          const ev = this.projectComponents.get(a.component) || [];
-          this.projectComponents.set(a.component, [...ev, ...a.events]);
-        }
-      }
-      if (ov?.remove_events) {
-        for (const r of ov.remove_events) {
-          this.removeEvents.set(r.component, new Set(r.events));
-        }
-      }
-    } catch (err: unknown) {
-      const msg = `项目字典加载失败 (${projectDir}): ${(err as Error)?.message || err}`;
-      console.warn('[InteractionInferrer]', msg);
-      this.loadErrors.push(msg);
-    }
-  }
-
-  infer(node: AccTreeNode): InteractionEvent[] {
+  /** 根据 ARIA role + 组件类型 推断交互事件列表 */
+  infer(role: string, componentType: string | null): InteractionEvent[] {
     const events = new Set<InteractionEvent>();
-    const ct = node.framework?.componentType;
 
-    // Step 1: _overrides override (highest)
-    if (ct && this.overrideComponents.has(ct)) {
-      return [...this.overrideComponents.get(ct)!] as InteractionEvent[];
+    // 基础 role 映射
+    const baseEvents = ROLE_EVENT_MAP[role];
+    if (baseEvents) {
+      for (const e of baseEvents) events.add(e);
     }
 
-    // Step 2: project components
-    if (ct && this.projectComponents.has(ct)) {
-      for (const e of this.projectComponents.get(ct)!) events.add(e as InteractionEvent);
-      if (this.removeEvents.has(ct)) {
-        for (const e of this.removeEvents.get(ct)!) events.delete(e as InteractionEvent);
-      }
-    }
-
-    // Step 3: base controls rules (sorted by priority descending)
-    const sortedRules = [...this.baseControls].sort((a, b) => b.priority - a.priority);
-    for (const rule of sortedRules) {
-      if (this.evaluateMatch(node, rule.match)) {
-        for (const e of rule.events) events.add(e as InteractionEvent);
-        if (rule.conditional_events) {
-          for (const ce of rule.conditional_events) {
-            if (this.evaluateMatch(node, ce.when)) {
-              for (const e of ce.events) events.add(e as InteractionEvent);
-            }
-          }
+    // 组件类型追加事件
+    if (componentType) {
+      const ctLower = componentType.toLowerCase();
+      for (const [key, extra] of Object.entries(COMPONENT_EXTRA_EVENTS)) {
+        if (ctLower.includes(key)) {
+          for (const e of extra) events.add(e);
         }
       }
     }
 
-    // scroll_into_view for all actionable
+    // 所有可交互元素自动加上 scroll_into_view
     if (events.size > 0) {
-      events.add('scroll_into_view' as InteractionEvent);
+      events.add('scroll_into_view');
     }
 
     return [...events];
   }
 
+  /** 判定元素是否可交互 */
   isActionable(node: AccTreeNode): boolean {
     return (
-      this.interactiveRoles.has(node.a11y?.role ?? '') &&
-      node.geometry?.isVisible === true &&
-      node.a11y?.disabled !== true &&
-      node.geometry?.boundingBox !== null
+      INTERACTIVE_ROLES.has(node.a11y.role ?? '') &&
+      node.geometry.isVisible === true &&
+      node.a11y.disabled !== true &&
+      node.geometry.boundingBox !== null
     );
   }
 
-  private evaluateMatch(node: AccTreeNode, cond: any): boolean {
-    if (!cond) return true;
-    const d = node.dom;
-    const a = node.a11y;
-    const ct = node.framework?.componentType ?? '';
-
-    if (cond.tagName && d?.tagName !== cond.tagName) return false;
-    if (cond.role && a?.role !== cond.role) return false;
-    if (cond.classContains && !d?.className?.includes(cond.classContains)) return false;
-    if (cond.componentContains && !ct.includes(cond.componentContains)) return false;
-    if (cond.domHasAttr && !(d?.attributes as any)?.[cond.domHasAttr]) return false;
-
-    if (cond.domAttr) {
-      for (const [k, v] of Object.entries(cond.domAttr)) {
-        if (k === 'tagName' && d?.tagName !== v) return false;
-        if ((d?.attributes as any)?.[k] !== v) return false;
-      }
-    }
-
-    if (cond.a11yAttr) {
-      for (const [k, v] of Object.entries(cond.a11yAttr)) {
-        if ((a as any)?.[k] !== v) return false;
-      }
-    }
-
-    if (cond.all) return cond.all.every((c: any) => this.evaluateMatch(node, c));
-    if (cond.any) return cond.any.some((c: any) => this.evaluateMatch(node, c));
-
-    return true;
-  }
-
+  /** 丰富交互信息（事件推断 + 可交互判定 + 值/约束提取） */
   enrichInteraction(node: AccTreeNode): InteractionInfo {
-    const events = this.infer(node);
+    const ct = node.dom.componentPrefix
+      ? node.dom.className?.split(/\s+/).find(c => c.startsWith(node.dom.componentPrefix!)) ?? null
+      : null;
+    const events = this.infer(node.a11y.role, ct);
     const actionable = this.isActionable(node);
+
     return {
       events,
       actionable,
@@ -175,19 +107,13 @@ export class InteractionInferrer {
   }
 
   private extractValue(node: AccTreeNode): string | null {
-    return node.dom?.attributes?.value || null;
+    return node.dom.attributes?.value || null;
   }
 
   private extractConstraints(node: AccTreeNode): InteractionConstraints | null {
-    const a = node.dom?.attributes;
+    const a = node.dom.attributes;
     if (!a) return null;
-    if (!a.min && !a.max && !a.step && !a.maxlength && !a.type) return null;
-    return {
-      min: a.min ? Number(a.min) : undefined,
-      max: a.max ? Number(a.max) : undefined,
-      step: a.step ? Number(a.step) : undefined,
-      maxLength: a.maxlength ? Number(a.maxlength) : undefined,
-      inputType: a.type || undefined,
-    };
+    if (!a.type) return null;
+    return { inputType: a.type };
   }
 }
