@@ -1,10 +1,29 @@
 /**
  * Excel → YAML 测试用例转换器
  * 智能列名匹配（中英文多别名）
+ *
+ * 安全注意事项（P1）：
+ *   - 依赖 xlsx (SheetJS) 已停维，存在原型污染漏洞 (GHSA-4r6h-8v6p-xvw6)
+ *   - 缓解策略：入口处强制文件大小限制(10MB)、格式白名单(.xlsx/.xls)
+ *   - 长期方案：评估迁移至 ExcelJS 或仅接受 YAML 输入
  */
+
 import * as path from 'node:path';
 import * as fs from 'node:fs';
 import { dump } from 'js-yaml';
+
+
+const MAX_FILE_SIZE = 10 * 1024 * 1024;
+const ALLOWED_EXTENSIONS = new Set([".xlsx", ".xls"]);
+
+function validateSourceFile(sourcePath: string): string | null {
+  if (!fs.existsSync(sourcePath)) return "文件不存在: " + sourcePath;
+  var ext = path.extname(sourcePath).toLowerCase();
+  if (!ALLOWED_EXTENSIONS.has(ext)) return "不支持的文件格式: " + ext + "。仅允许 .xlsx / .xls 文件";
+  try { var stat = fs.statSync(sourcePath); if (stat.size > MAX_FILE_SIZE) { var mb = (stat.size / (1024 * 1024)).toFixed(1); return "文件过大: " + mb + "MB (上限 10MB)。请拆分文件或使用 YAML 输入"; } } catch { return "无法读取文件信息: " + sourcePath; }
+  return null;
+}
+
 
 export const COLUMN_ALIASES: Record<string, string[]> = {
   id: ['用例ID', '编号', 'ID', 'Case ID', '用例编号', 'case_id'],
@@ -74,6 +93,12 @@ export async function convertXlsxToYaml(
   sheetName?: string,
   defaultEnv?: string,
 ): Promise<{ total: number; files: string[]; warnings: string[] }> {
+  // --- 安全校验：文件大小、格式白名单 ---
+  const fileError = validateSourceFile(sourcePath);
+  if (fileError) {
+    return { total: 0, files: [], warnings: [fileError] };
+  }
+
   // 使用 ESM 动态 import() 加载 xlsx，保持防御性兜底
   let XLSX: any;
   try {
@@ -106,16 +131,25 @@ export async function convertXlsxToYaml(
   const outDir = path.join(outputDir, category);
   fs.mkdirSync(outDir, { recursive: true });
 
+  // 每行单独 try-catch，单行失败不中断批量写入
   for (let i = 1; i < data.length; i++) {
-    const row = data[i];
-    const id = row[mapping.id]?.trim();
-    if (!id) continue;
+    try {
+      const row = data[i];
+      const id = row[mapping.id]?.trim();
+      if (!id) continue;
 
-    const yaml = convertRowToYaml(row, mapping, defaultEnv);
-    const filePath = path.join(outDir, id + '.yaml');
-    fs.writeFileSync(filePath, yaml, 'utf8');
-    files.push(filePath);
+      const yaml = convertRowToYaml(row, mapping, defaultEnv);
+      // 文件名 sanitize：替换文件系统非法字符为下划线
+      const safeId = id.replace(/[<>:"/\|?*]/g, '_');
+      const filePath = path.join(outDir, safeId + '.yaml');
+      fs.writeFileSync(filePath, yaml, 'utf8');
+      files.push(filePath);
+    } catch (err: unknown) {
+      warnings.push(`行 ${i + 1} 写入失败: ${(err as Error)?.message || String(err)}`);
+    }
   }
 
   return { total: files.length, files, warnings };
 }
+
+

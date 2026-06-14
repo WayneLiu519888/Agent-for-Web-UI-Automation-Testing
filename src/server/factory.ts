@@ -36,17 +36,19 @@ export function createMcpServer(transportType: TransportType): McpServer {
       continue;
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // ToolDefinition.handler 签名 (args: unknown, extra?: unknown) 与
+    // MCP SDK ToolCallback 签名 (args: T, ctx: ServerContext) 不同。
+    // 通过包装函数桥接：丢弃 ctx 并将 args 原样转发。
     server.registerTool(
-      tool.name as any,
+      tool.name,
       {
         title: tool.title,
         description: tool.description,
-        // ToolDefinition 使用宽松的 Record<string, unknown> 类型以保持灵活性，
-        // 实际运行时 inputSchema 始终是 Zod schema，handler 签名完全匹配
-        inputSchema: tool.inputSchema as any,
-      } as any,
-      tool.handler as any,
+        // Zod v4 schema 实现 StandardSchemaWithJSON 接口，
+        // 可直接作为 MCP SDK 的 inputSchema 参数
+        inputSchema: tool.inputSchema,
+      },
+      (args, _ctx) => tool.handler(args),
     );
 
     registeredCount++;

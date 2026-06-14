@@ -49,7 +49,7 @@ export function createStep(
 
 /**
  * 从 LLM 输出的执行计划文本中解析步骤列表
- * LLM 输出格式: "步骤X: [action](selector) -> value"
+ * LLM 输出格式: "步骤X: action(selector) -> value"
  */
 export function parseLLMPlan(llmOutput: string): ExecutionStep[] {
   const steps: ExecutionStep[] = [];

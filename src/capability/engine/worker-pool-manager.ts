@@ -86,7 +86,14 @@ export class WorkerPoolManager extends EventEmitter {
       }
     }
     if (canSpawnNew && this.scheduler.pendingCount() > 0 && this.workers.size < this.maxWorkers) {
-      this.spawnWorker();
+      // 扩容失败不阻塞资源检查循环，通过事件通知外部监听方
+      this.spawnWorker().catch((err: unknown) => {
+        console.error(
+          '[WorkerPool] Worker 扩容失败:',
+          (err as Error)?.message || err,
+        );
+        this.emit('worker:spawn-failed', { error: err, timestamp: Date.now() });
+      });
     }
   }
 

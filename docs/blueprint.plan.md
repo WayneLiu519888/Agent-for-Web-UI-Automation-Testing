@@ -1992,8 +1992,8 @@ Agent-for-Web-UI-Automation-Testing/
 │   │   ├── interaction-inferrer.ts# 配置驱动事件推断器
 │   │   ├── locator-builder.ts     # 多策略定位器
 │   │   ├── report-aggregator.ts   # 报告聚合器
-│   │   ├── resource-detector.ts   # 机器资源检测
-│   │   ├── task-scheduler.ts      # 优先级队列+parGroup亲和性+工作窃取
+│   │   ├── resource-detector.ts   # 机器资源检测 (双重约束: totalMB主+freeMB上限; watermarks缓存)
+│   │   ├── task-scheduler.ts      # 任务调度器: 二分插入优先级队列+分区队列(assign O(1)/steal O(1))+parGroup亲和性+工作窃取
 │   │   ├── worker-pool-manager.ts # Worker Pool 管理器
 │   │   ├── yaml-reader.ts         # YAML 读取
 │   │   └── yaml-writer.ts         # YAML 写入
@@ -2327,7 +2327,46 @@ browser:
 | **docs/ 中的截图** | 仅允许 demo 应用截图，不得出现企业内部系统界面 |
 | **dictionaries/base/ 中的 componentType** | 仅含开源 AUI 库（ant-/el-/n-/arco-），不得含企业自研组件库前缀 |
 
-### 10.7 Pre-commit Hook 自动拦截（`.husky/pre-commit`）
+#### 10.6.1 密码注入运行时实现：resolveEnvVars()
+
+> **已实现于** `src/capability/config/loader.ts` 的 `resolveEnvVars()` 函数。
+
+密码注入机制通过递归遍历整个配置对象实现：所有字符串值中的 `${VAR_NAME}` 模式会被替换为 `process.env[VAR_NAME]` 的实际值。未设置的环境变量会保留原始占位符并输出 `console.warn`。
+
+此机制在 `loadConfig()` 完成 YAML 加载和合并后自动调用，覆盖所有配置字段（包括但不限于 password、api_key、webhook_url 等敏感字段）。
+
+示例：
+```yaml
+# environments/production.yaml
+accounts:
+  admin:
+    username: admin
+    password: ${PROD_ADMIN_PASSWORD}   # 将替换为 process.env.PROD_ADMIN_PASSWORD
+```
+
+### 10.7 Chromium 沙箱安全策略
+
+> **已实现于** `src/capability/config/loader.ts` 的 `applySandboxConfig()` 函数。
+
+- **默认行为**：Chromium 安全沙箱启用。`--no-sandbox` 已从默认参数和 `mcp.config.yaml` 中移除
+- **容器环境例外**：设置 `CHROMIUM_SANDBOX=false` 显式启用 `--no-sandbox`（仅限 Docker / CI 等无特权容器环境）
+- **清洗逻辑**：`applySandboxConfig()` 在配置加载完成后清理所有来源（默认配置、YAML 覆盖）的沙箱相关参数，然后根据环境变量决定是否重新添加
+- **安全日志**：禁用沙箱时输出 `console.warn` 诊断信息
+
+### 10.8 xlsx 依赖安全风险 (P1)
+
+> **缓解措施已实现于** `src/capability/excel/converter.ts`。
+
+**已知漏洞**：xlsx (SheetJS) 社区版已停维，存在原型污染漏洞 (GHSA-4r6h-8v6p-xvw6)。该库无法升级，仅能通过入口防御缓解。
+
+**缓解策略**：
+1. 文件大小限制：`convertXlsxToYaml()` 入口校验文件不超过 10MB
+2. 格式白名单：仅允许 `.xlsx` / `.xls` 扩展名
+3. 来源限制：通过 .gitignore 确保输入文件来自可信来源
+
+**长期方案**：评估迁移至 ExcelJS 或仅接受 YAML 格式输入。
+
+### 10.9 Pre-commit Hook 自动拦截（`.husky/pre-commit`）
 
 ```bash
 #!/bin/sh
@@ -2342,7 +2381,7 @@ if git diff --cached --name-only | grep -q '^enterprise/'; then
 fi
 ```
 
-### 10.8 双层 Remote 工作流
+### 10.10 双层 Remote 工作流
 
 ```bash
 # 家庭办公 — 单 remote 模式
@@ -2358,15 +2397,19 @@ git push internal main     # 推企业内部 Git（企业内部自行管理 ente
 #    origin (GitHub) 仅在家庭网络推送
 ```
 
-### 10.9 风险矩阵
+### 10.11 风险矩阵
 
 | 风险 | 场景 | 等级 | 缓解 |
 |------|------|:---:|------|
 | `enterprise/` 被误提交到 GitHub | 开发者忘记 .gitignore | 🔴 | Pre-commit hook + `.gitignore` 双重防护 |
 | 企业信息通过 force push 泄露 | 强制推送覆盖历史 | 🔴 | GitHub Branch Protection + force push 禁用 |
+| MCP HTTP 端点无认证运行 | MCP_API_KEY 未设置 | 🔴 | HTTP 模式下 `process.exit(1)` 拒绝启动 |
+| Chromium 沙箱默认禁用 | --no-sandbox 写死在默认配置 | 🔴 | `CHROMIUM_SANDBOX=false` 显式控制，默认启用沙箱 |
+| xlsx 原型污染漏洞 | 恶意构造的 Excel 文件 | 🔴 | 文件大小限制(10MB) + 格式白名单 + 来源限制 |
 | CodeHub 信息通过 commit 泄露 | commit 中写了内部 URL | 🟡 | Pre-commit hook + 团队规范 |
 | 配置路径硬编码在源码中 | 硬编码了 enterprise/ 路径 | 🟢 | `paths.ts` + Code Review |
 | 截图/报告/acc tree 残留 | 本地文件忘记清理 | 🟢 | 全在 `enterprise/` 下，一次 gitignore |
+| 密码占位符未解析 | `${ENV_VAR}` 字面值加载到配置 | 🟢 | `resolveEnvVars()` 运行时自动解析 |
 
 ---
 
@@ -2651,26 +2694,25 @@ Phase 3 — 按需补救 (主进程，LLM)
 IPC 通信: child_process.fork() → process.send() / process.on('message')
 每个 Worker: 独立 Node.js 进程 + 独立 Playwright 实例 + 独立 Chromium
 ```
-
-**Worker 状态机**：
-```
-idle → assigned → running → completed | failed | crashed
-                                 ↓
-                            completed → idle (接下一任务)
-
-crash → 指数退避重启 (5s/10s/20s/...) → 连续 ≥3 次 → 降低 max_workers
-```
-
 ### 12.3 资源感知调度
 
 **启动时检测**（`detectResources()`）：
 
 ```typescript
 物理核心 = 平台特定方法检测 (WMIC/proc/cpuinfo/sysctl) → 16 核 (7950X)
-可用内存 = os.freemem() → 假设 48GB 空闲
-Chromium 基线 = 实测空实例 → ~600MB
-max_workers = min(物理核心 - 2, 可用内存 / Chromium基线) → min(14, 60) = 14
-machine_profile: "high" (max_workers ≥ 12)
+总内存 = os.totalmem() → 64GB → usableMemoryMB = totalMemoryMB - 2048 (预留2GB给OS)
+空闲内存 = os.freemem() → 瞬时值，作为动态安全上限
+Chromium 基线 = 800MB (保守估算)
+cpuLimit = max(1, 物理核心 - 2) → 14
+
+// C1 双重约束: 主约束基于 totalMemoryMB 避免 freeMemoryMB 波动导致容量剧烈变化
+totalBasedLimit = floor(usableMemoryMB / 800) → floor(62*1024/800) = 79
+freeBasedLimit  = floor((freeMemoryMB - 1024) / 800) → 动态安全上限
+memLimit = min(totalBasedLimit, freeBasedLimit) → 取较小值
+max_workers = min(cpuLimit, memLimit)
+machine_profile: "high" (max_workers >= 12)
+
+// C4: 水位线值 memory_low_watermark_mb / memory_high_watermark_mb 在此处缓存为模块级变量
 ```
 
 **运行时检测**（`runtimeCheck()`，每 5 秒）：
@@ -2691,8 +2733,11 @@ class WorkerPoolManager {
   // 自动检测机器资源
   resolveConfig(userConfig): PoolConfig {
     physicalCores = detectPhysicalCores()  // 平台特定方法检测 + 兜底假设HT 2:1
-    freeMemMB = os.freemem()
-    memLimit = floor((freeMemMB - 1024) / 800)
+    totalMemMB = os.totalmem() / (1024*1024); freeMemMB = os.freemem() / (1024*1024)
+    usableMemMB = totalMemMB - 2048  // C1: 基于 totalMemoryMB 的保守估算，预留2GB给OS
+    totalBasedLimit = floor(usableMemMB / 800)
+    freeBasedLimit = floor((freeMemMB - 1024) / 800)  // 动态安全上限
+    memLimit = min(totalBasedLimit, freeBasedLimit)  // 双重约束
     cpuLimit = max(1, physicalCores - 2)
     autoMax = min(cpuLimit, memLimit)
   }
@@ -2750,7 +2795,7 @@ process.on('message', async (msg: AssignTaskMessage) => {
 
   process.send!({ type: 'TASK_RESULT', ... });
 });
-```
+├── task-scheduler.ts          # 任务调度器（二分插入优先队列+分区队列(C2)+parGroup亲和性+工作窃取)
 
 ### 12.6 物理瓶颈分析
 
@@ -2770,7 +2815,7 @@ process.on('message', async (msg: AssignTaskMessage) => {
 ```
 src/capability/engine/
 ├── worker-pool-manager.ts     # Worker Pool 管理器
-├── resource-detector.ts       # 机器资源检测
+├── resource-detector.ts       # 机器资源检测 (C1:totalMB双重约束; C4:水位线缓存)
 ├── task-scheduler.ts          # 任务调度器（优先级队​列+parGroup亲和性+工作窃取）
 ├── execution-plan.ts          # ExecutionPlan 类型定义
 ├── explorer.ts                # Web 探索引擎
@@ -2875,7 +2920,7 @@ accounts:
 
 #### 14.3.5 reports/ — 测试报告实例（必须）🟠高危
 
-`test-case-executor` 执行完成后 → `report/aggregator.ts` 聚合 → `report/writer.ts` 写入 JSON 到 `enterprise/reports/`。测试结果反映企业内部系统质量和缺陷信息。
+`test-case-executor` 执行完成后 → `report/aggregator.ts` 聚合 → `report/aggregator.ts` 写入 JSON 到 `enterprise/reports/`。测试结果反映企业内部系统质量和缺陷信息。
 
 #### 14.3.6 screenshots/ + traces/ — 截图 + Trace（必须）🟠高危
 
@@ -2926,15 +2971,15 @@ src/capability/
 │   ├── explorer.ts                   #   BFS 页面探索
 │   ├── worker-pool-manager.ts        #   Worker Pool 管理
 │   ├── task-scheduler.ts             #   任务调度(parGroup亲和性+工作窃取)
-│   ├── resource-detector.ts          #   资源检测
+│   ├── resource-detector.ts          #   资源检测(C1:双重约束 + C4:水位线缓存)
 │   └── dom-collector.ts              #   DOM 采集
 ├── analysis/                         # 组件分析
 │   ├── component-analyzer.ts
 │   └── component-scout.ts
 ├── yaml/reader.ts + writer.ts        # YAML 读写工具
-├── excel/parser.ts + converter.ts    # Excel 转换工具
+├── excel/converter.ts              # Excel 转换工具
 ├── config/loader.ts + generator.ts   # 配置加载工具
-└── report/aggregator.ts + writer.ts  # 报告生成工具
+└── report/aggregator.ts            # 报告生成工具
 ```
 
 ### 14.5 数据流：能力层工具 → 企业运行时层
@@ -2961,7 +3006,7 @@ config/loader (企业覆盖)               (企业配置读取)     ←     conf
 | 2 | 迁移 15 个 `src/core/*.ts` → `src/capability/` 对应子目录 + 修正 import 路径 | ✅ 逐文件 mv + sed |
 | 3 | 新建 Playwright 封装层 (adapter.ts + 23 个封装工具) | ✅ 新文件 |
 | 4 | 更新 `src/server/factory.ts` + `src/entries/` 的 import 路径 | ✅ 仅改路径 |
-| 5 | 拆分 `case-generator.ts` → `excel/parser.ts` + `excel/converter.ts`；拆分 `report-aggregator.ts` → `report/aggregator.ts` + `report/writer.ts` | ✅ 拆分纯数据部分 |
+| 5 | 拆分 `case-generator.ts` → `excel/converter.ts`；拆分 `report-aggregator.ts` → `report/aggregator.ts` (excel/parser.ts 与 report/writer.ts 后续清退) | ✅ 拆分纯数据部分 |
 | 6 | 删除 `src/core/` + `src/config/` + `src/tools/` 旧目录；`grep -r` 验证零引用 | ✅ 零残留引用 |
 | 7 | 更新蓝图第五章 (目录结构)、CLAUDE.md、四语言 README | ✅ 仅文档 |
 
@@ -2981,3 +3026,49 @@ config/loader (企业覆盖)               (企业配置读取)     ←     conf
 | `auth/` | ✅ 可选 | 🔴 | Cookie 15分钟过期，仅同次 CI Run 有价值 |
 | `dictionaries/projects/` | ✅ 必须 | 🟡 | 组件字典 |
 | `configs/` | ✅ 必须 | 🔴 | CodeHub 信息 |
+
+---
+
+## 十五、静默失败防护修复 (Silent Failure Prevention)
+
+### 15.1 背景
+
+代码审计发现了 6 处静默失败问题：空 catch 块、无保护的 I/O 操作、fire-and-forget Promise、批量循环无逐行容错。这些问题会导致异常被吞掉，无日志、无告警、不知道出错了——在生产环境中极难排查。
+
+### 15.2 修复清单
+
+| # | 文件 | 问题 | 修复 |
+|:---:|---|---|---|
+| SF1 | engine/resource-detector.ts:79-81 | detectPhysicalCores 空 catch 吞异常 | catch(err) console.warn 含平台名 + warnings 追加回退告警 |
+| SF2 | config/loader.ts:96-105 | yamlLoad(readFileSync) 无 try-catch | 基础损坏抛 McpConfigError；企业损坏 console.warn 降级 |
+| SF3 | engine/worker-pool-manager.ts:89 | spawnWorker fire-and-forget 无 catch | .catch(err) console.error + emit worker:spawn-failed |
+| SF7 | yaml/writer.ts 全部函数 | writeFileSync 无 try-catch | 每个函数内部包裹 + 抛出 FileWriteError 带路径 |
+| SF9 | excel/converter.ts:109-118 | 循环内单行失败中断批量 | 每行独立 try-catch + 失败追加 warnings；文件名 sanitize |
+| M5/H1 | engine/interaction-inferrer.ts | 加载失败仅 console.warn | 新增 loadErrors: string[] 字段暴露状态 |
+
+### 15.3 新增基础设施
+
+**自定义错误类型** (`src/types/errors.ts`)：
+
+| 错误类型 | 用途 |
+|:---:|---|
+| McpConfigError | 基础配置损坏时抛出，阻断启动 |
+| FileWriteError | 文件写入失败，携带 filePath 字段 |
+
+**InteractionInferrer.loadErrors** (`src/capability/engine/interaction-inferrer.ts`)：
+
+- `public loadErrors: string[]` — 字典加载过程中的累积错误信息
+- 基础控件字典加载失败 → push 错误详情到 loadErrors + console.warn
+- 项目字典加载失败 → push 错误详情到 loadErrors + console.warn
+- 调用方可通过 `inferrer.loadErrors.length > 0` 判断加载健康状态
+
+### 15.4 防御规则总则
+
+此后所有新增/修改代码遵循：
+
+1. **空 catch 块禁止** — 至少记录 console.warn/error 或向上传播
+2. **配置加载分层处理** — 基础损坏抛 McpConfigError；可选层损坏降级
+3. **异步 fire-and-forget 必须 .catch()** — 记录 console.error + 事件通知
+4. **文件写入统一用 FileWriteError** — 带路径信息，便于诊断
+5. **批量循环逐行 try-catch** — 单行失败不中断整体
+6. **字典加载用 loadErrors 暴露状态** — 调用方无需查日志即可感知

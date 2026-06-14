@@ -1,8 +1,8 @@
 /**
  * Playwright MCP 封装工具集
  *
- * 将 20 个 Playwright MCP 工具的轻量封装合并到单一文件，
- * 消除原先 20 个完全同构文件的冗余。
+ * 20 个 Playwright MCP 工具的封装骨架 --- 待 Phase 4 接入 @playwright/mcp
+ * 
  *
  * 所有工具函数遵循相同模式：
  *   - 接收 PwAdapter 实例和参数
@@ -35,101 +35,101 @@
 import type { PwAdapter } from './adapter.js';
 
 export function pwNavigate(adapter: PwAdapter, args: any): Promise<any> {
-  // 委托 @playwright/mcp browser_navigate
+  // TODO(Phase-4): 委托 @playwright/mcp browser_navigate --- 当前为占位实现
   return Promise.resolve({ ok: true, tool: 'pw-navigate' });
 }
 
 export function pwClick(adapter: PwAdapter, args: any): Promise<any> {
-  // 委托 @playwright/mcp browser_click
+  // TODO(Phase-4): 委托 @playwright/mcp browser_click --- 当前为占位实现
   return Promise.resolve({ ok: true, tool: 'pw-click' });
 }
 
 export function pwFill(adapter: PwAdapter, args: any): Promise<any> {
-  // 委托 @playwright/mcp browser_type / browser_fill
+  // TODO(Phase-4): 委托 @playwright/mcp browser_type / browser_fill --- 当前为占位实现
   return Promise.resolve({ ok: true, tool: 'pw-fill' });
 }
 
 export function pwForm(adapter: PwAdapter, args: any): Promise<any> {
-  // 委托 @playwright/mcp browser_fill_form
+  // TODO(Phase-4): 委托 @playwright/mcp browser_fill_form --- 当前为占位实现
   return Promise.resolve({ ok: true, tool: 'pw-form' });
 }
 
 export function pwSelect(adapter: PwAdapter, args: any): Promise<any> {
-  // 委托 @playwright/mcp browser_select_option
+  // TODO(Phase-4): 委托 @playwright/mcp browser_select_option --- 当前为占位实现
   return Promise.resolve({ ok: true, tool: 'pw-select' });
 }
 
 export function pwHover(adapter: PwAdapter, args: any): Promise<any> {
-  // 委托 @playwright/mcp browser_hover
+  // TODO(Phase-4): 委托 @playwright/mcp browser_hover --- 当前为占位实现
   return Promise.resolve({ ok: true, tool: 'pw-hover' });
 }
 
 export function pwKeyboard(adapter: PwAdapter, args: any): Promise<any> {
-  // 委托 @playwright/mcp browser_press_key
+  // TODO(Phase-4): 委托 @playwright/mcp browser_press_key --- 当前为占位实现
   return Promise.resolve({ ok: true, tool: 'pw-keyboard' });
 }
 
 export function pwDrag(adapter: PwAdapter, args: any): Promise<any> {
-  // 委托 @playwright/mcp browser_drag
+  // TODO(Phase-4): 委托 @playwright/mcp browser_drag --- 当前为占位实现
   return Promise.resolve({ ok: true, tool: 'pw-drag' });
 }
 
 export function pwWait(adapter: PwAdapter, args: any): Promise<any> {
-  // 委托 @playwright/mcp browser_wait_for
+  // TODO(Phase-4): 委托 @playwright/mcp browser_wait_for --- 当前为占位实现
   return Promise.resolve({ ok: true, tool: 'pw-wait' });
 }
 
 export function pwSnapshot(adapter: PwAdapter, args: any): Promise<any> {
-  // 委托 @playwright/mcp browser_snapshot
+  // TODO(Phase-4): 委托 @playwright/mcp browser_snapshot --- 当前为占位实现
   return Promise.resolve({ ok: true, tool: 'pw-snapshot' });
 }
 
 export function pwScreenshot(adapter: PwAdapter, args: any): Promise<any> {
-  // 委托 @playwright/mcp browser_take_screenshot
+  // TODO(Phase-4): 委托 @playwright/mcp browser_take_screenshot --- 当前为占位实现
   return Promise.resolve({ ok: true, tool: 'pw-screenshot' });
 }
 
 export function pwEvaluate(adapter: PwAdapter, args: any): Promise<any> {
-  // 委托 @playwright/mcp browser_evaluate
+  // TODO(Phase-4): 委托 @playwright/mcp browser_evaluate --- 当前为占位实现
   return Promise.resolve({ ok: true, tool: 'pw-evaluate' });
 }
 
 export function pwUpload(adapter: PwAdapter, args: any): Promise<any> {
-  // 委托 @playwright/mcp browser_file_upload
+  // TODO(Phase-4): 委托 @playwright/mcp browser_file_upload --- 当前为占位实现
   return Promise.resolve({ ok: true, tool: 'pw-upload' });
 }
 
 export function pwTabs(adapter: PwAdapter, args: any): Promise<any> {
-  // 委托 @playwright/mcp browser_tabs
+  // TODO(Phase-4): 委托 @playwright/mcp browser_tabs --- 当前为占位实现
   return Promise.resolve({ ok: true, tool: 'pw-tabs' });
 }
 
 export function pwResize(adapter: PwAdapter, args: any): Promise<any> {
-  // 委托 @playwright/mcp browser_resize
+  // TODO(Phase-4): 委托 @playwright/mcp browser_resize --- 当前为占位实现
   return Promise.resolve({ ok: true, tool: 'pw-resize' });
 }
 
 export function pwDialog(adapter: PwAdapter, args: any): Promise<any> {
-  // 委托 @playwright/mcp browser_handle_dialog
+  // TODO(Phase-4): 委托 @playwright/mcp browser_handle_dialog --- 当前为占位实现
   return Promise.resolve({ ok: true, tool: 'pw-dialog' });
 }
 
 export function pwConsole(adapter: PwAdapter, args: any): Promise<any> {
-  // 委托 @playwright/mcp browser_console_messages
+  // TODO(Phase-4): 委托 @playwright/mcp browser_console_messages --- 当前为占位实现
   return Promise.resolve({ ok: true, tool: 'pw-console' });
 }
 
 export function pwNetwork(adapter: PwAdapter, args: any): Promise<any> {
-  // 委托 @playwright/mcp browser_network_requests
+  // TODO(Phase-4): 委托 @playwright/mcp browser_network_requests --- 当前为占位实现
   return Promise.resolve({ ok: true, tool: 'pw-network' });
 }
 
 export function pwBack(adapter: PwAdapter, args: any): Promise<any> {
-  // 委托 @playwright/mcp browser_navigate_back
+  // TODO(Phase-4): 委托 @playwright/mcp browser_navigate_back --- 当前为占位实现
   return Promise.resolve({ ok: true, tool: 'pw-back' });
 }
 
 export function pwClose(adapter: PwAdapter, args: any): Promise<any> {
-  // 委托 @playwright/mcp browser_close
+  // TODO(Phase-4): 委托 @playwright/mcp browser_close --- 当前为占位实现
   return Promise.resolve({ ok: true, tool: 'pw-close' });
 }

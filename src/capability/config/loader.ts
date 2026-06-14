@@ -45,7 +45,7 @@ const defaultConfig: McpConfig = {
     channel: 'chromium', headless: true,
     viewport: { width: 1920, height: 1080 },
     locale: 'zh-CN', timezone: 'Asia/Shanghai',
-    args: ['--disable-dev-shm-usage', '--no-sandbox'],
+    args: ['--disable-dev-shm-usage'],
   },
   explorer: {
     mode: 'quick', max_depth: 2, max_pages: 50,
@@ -85,6 +85,60 @@ function deepMerge(base: any, override: any): any {
   return result;
 }
 
+/**
+ * 解析配置中的 ${VAR_NAME} 环境变量占位符
+ * 递归遍历整个配置对象，将所有字符串值中的 ${VAR_NAME} 替换为 process.env[VAR_NAME]
+ * 若引用的环境变量未设置，保留原始占位符并输出警告
+ *
+ * 优先级：SECURITY_CRITICAL — 这是 CLAUDE.md 声明的密码注入机制的运行时实现
+ */
+function resolveEnvVars(obj: unknown): unknown {
+  if (typeof obj === 'string') {
+    return obj.replace(/${([A-Za-z_][A-Za-z0-9_]*)}/g, (match, varName: string) => {
+      const value = process.env[varName];
+      if (value === undefined) {
+        console.warn('[config] 环境变量 ' + varName + ' 未设置，保留占位符: ' + match);
+        return match;
+      }
+      return value;
+    });
+  }
+  if (Array.isArray(obj)) {
+    return obj.map(item => resolveEnvVars(item));
+  }
+  if (obj && typeof obj === 'object') {
+    const resolved: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(obj as Record<string, unknown>)) {
+      resolved[key] = resolveEnvVars(value);
+    }
+    return resolved;
+  }
+  return obj;
+}
+
+/**
+ * 根据 CHROMIUM_SANDBOX 环境变量控制 Chromium 沙箱
+ * - 未设置或 CHROMIUM_SANDBOX=true（默认）：移除 --no-sandbox，启用沙箱保护
+ * - CHROMIUM_SANDBOX=false：添加 --no-sandbox（仅限 Docker 等容器环境）
+ *
+ * 注意：仅在 Docker 容器或 CI 等无特权环境中才应禁用沙箱。
+ *       在宿主机上禁用沙箱会暴露内核级攻击面。
+ */
+function applySandboxConfig(config: McpConfig): void {
+  const sandboxEnv = process.env.CHROMIUM_SANDBOX;
+  const disableSandbox = sandboxEnv === 'false';
+
+  // 清理所有沙箱相关参数（无论来自默认配置还是 YAML 覆盖）
+  config.browser.args = config.browser.args.filter(
+    arg => arg !== '--no-sandbox' && arg !== '--enable-features=NetworkService,NetworkServiceInProcess'
+  );
+
+  if (disableSandbox) {
+    console.warn('[config] CHROMIUM_SANDBOX=false — Chromium 安全沙箱已禁用。仅应在 Docker/CI 等容器环境中使用。');
+    config.browser.args.push('--no-sandbox');
+  }
+}
+
 let cachedConfig: McpConfig | null = null;
 
 
@@ -103,6 +157,13 @@ export function loadConfig(): McpConfig {
     const epConfig = yamlLoad(fs.readFileSync(epPath, 'utf8'));
     config = deepMerge(config, epConfig);
   }
+
+  // 安全增强：解析配置中的 ${ENV_VAR} 环境变量占位符（密码注入机制）
+  config = resolveEnvVars(config) as McpConfig;
+
+  // 安全增强：根据 CHROMIUM_SANDBOX 环境变量控制沙箱
+  applySandboxConfig(config);
+
   cachedConfig = config;
   return config;
 }

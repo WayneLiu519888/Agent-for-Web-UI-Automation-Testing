@@ -52,6 +52,7 @@ export function readEnvironment(name: string): EnvironmentConfig {
   const fullPath = resolvePath('environments', `${name}.yaml`);
   const yaml = safeRead(fullPath);
   if (!yaml || typeof yaml !== 'object') throw new YamlReadError('无效的环境配置格式', fullPath);
+  // TODO(Phase-3): 接入 Zod schema 校验 --- 当前依赖 YAML 内容的隐式约定
   return yaml as EnvironmentConfig;
 }
 
@@ -59,12 +60,14 @@ export function readAccTree(filePath: string): AccTreeDocument {
   const fullPath = resolvePath('acc-trees', filePath);
   const yaml = safeRead(fullPath);
   if (!yaml || typeof yaml !== 'object') throw new YamlReadError('无效的 Acc Tree 格式', fullPath);
+  // TODO(Phase-3): 接入 Zod schema 校验 --- 当前依赖 YAML 内容的隐式约定
   return yaml as AccTreeDocument;
 }
 
 export function readExecutionPlan(filePath: string): ExecutionPlan {
   const yaml = safeRead(filePath);
   if (!yaml || typeof yaml !== 'object') throw new YamlReadError('无效的执行计划格式', filePath);
+  // TODO(Phase-3): 接入 Zod schema 校验 --- 当前依赖 YAML 内容的隐式约定
   return yaml as ExecutionPlan;
 }
 

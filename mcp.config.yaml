@@ -6,7 +6,8 @@ browser:
   timezone: "Asia/Shanghai"
   args:
     - "--disable-dev-shm-usage"
-    - "--no-sandbox"
+  # Chromium 沙箱默认启用。如需在 Docker/CI 容器中禁用沙箱，
+  # 设置环境变量 CHROMIUM_SANDBOX=false
 explorer:
   mode: "quick"
   max_depth: 2

@@ -1,4 +1,5 @@
 import type { ZodType } from 'zod';
+import type { CallToolResult } from '@modelcontextprotocol/server';
 
 /**
  * 工具暴露范围类型
@@ -23,8 +24,8 @@ export interface ToolDefinition {
   inputSchema: ZodType;
   /** 暴露范围 */
   visibility: ToolVisibility;
-  /** 工具执行回调函数（匹配 MCP SDK 的 ToolCallback 签名） */
-  handler: (args: unknown, extra?: unknown) => Promise<{ content: Array<{ type: string; text?: string; [key: string]: unknown }> }>;
+  /** 工具执行回调函数 — 返回类型对齐 MCP SDK 的 CallToolResult */
+  handler: (args: unknown, extra?: unknown) => Promise<CallToolResult>;
 }
 
 /**

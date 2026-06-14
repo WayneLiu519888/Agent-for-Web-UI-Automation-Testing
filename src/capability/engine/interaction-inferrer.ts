@@ -10,6 +10,9 @@ import type { InteractionEvent, InteractionInfo, ControlRule, InteractionConstra
 import { load as yamlLoad } from 'js-yaml';
 
 export class InteractionInferrer {
+  /** 字典加载过程中的累积错误信息，供外部监控/诊断 */
+  public loadErrors: string[] = [];
+
   private baseControls: ControlRule[] = [];
   private projectComponents: Map<string, string[]> = new Map();
   private removeEvents: Map<string, Set<string>> = new Map();
@@ -31,23 +34,30 @@ export class InteractionInferrer {
   }
 
   private loadBaseControls(baseDir: string) {
+    const filePath = path.join(baseDir, 'controls.yaml');
     try {
-      const raw = yamlLoad(fs.readFileSync(path.join(baseDir, 'controls.yaml'), 'utf8')) as any;
+      const raw = yamlLoad(fs.readFileSync(filePath, 'utf8')) as any;
       if (raw?.rules) this.baseControls = raw.rules;
-    } catch (err: unknown) { console.warn('[InteractionInferrer] 基础控件字典加载失败:', (err as Error)?.message || err); }
+    } catch (err: unknown) {
+      const msg = `基础控件字典加载失败 (${filePath}): ${(err as Error)?.message || err}`;
+      console.warn('[InteractionInferrer]', msg);
+      this.loadErrors.push(msg);
+    }
   }
 
   private loadProjectDict(projectDir: string) {
     try {
       // components.yaml
-      const compRaw = yamlLoad(fs.readFileSync(path.join(projectDir, 'components.yaml'), 'utf8')) as any;
+      const compPath = path.join(projectDir, 'components.yaml');
+      const compRaw = yamlLoad(fs.readFileSync(compPath, 'utf8')) as any;
       if (compRaw?.components) {
         for (const c of compRaw.components) {
           if (c.events) this.projectComponents.set(c.id, c.events);
         }
       }
       // _overrides.yaml
-      const ov = yamlLoad(fs.readFileSync(path.join(projectDir, '_overrides.yaml'), 'utf8')) as any;
+      const ovPath = path.join(projectDir, '_overrides.yaml');
+      const ov = yamlLoad(fs.readFileSync(ovPath, 'utf8')) as any;
       if (ov?.override) {
         for (const o of ov.override) this.overrideComponents.set(o.component, o.events);
       }
@@ -62,7 +72,11 @@ export class InteractionInferrer {
           this.removeEvents.set(r.component, new Set(r.events));
         }
       }
-    } catch (err: unknown) { console.warn('[InteractionInferrer] 项目字典加载失败:', (err as Error)?.message || err); }
+    } catch (err: unknown) {
+      const msg = `项目字典加载失败 (${projectDir}): ${(err as Error)?.message || err}`;
+      console.warn('[InteractionInferrer]', msg);
+      this.loadErrors.push(msg);
+    }
   }
 
   infer(node: AccTreeNode): InteractionEvent[] {

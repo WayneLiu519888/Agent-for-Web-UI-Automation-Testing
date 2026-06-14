@@ -2,29 +2,20 @@
 /**
  * HTTP Streamable 传输入口
  *
- * 启动 Express + Streamable HTTP 服务器，供远程 MCP 客户端通过 HTTP 调用。
- * 注册 visibility 为 'all' 和 'http' 的工具。
- *
- * 环境变量：
- *   MCP_HOST      — 监听地址，默认 127.0.0.1（不直接暴露到公网）
- *   PORT          — 监听端口，默认 3000
- *   MCP_API_KEY   — 若设置，/mcp 端点要求 Bearer Token 认证
- *
- * 用法：
- *   node dist/entries/http.js
- *   MCP_HOST=0.0.0.0 MCP_API_KEY=xxx npx tsx src/entries/http.ts
+ * 安全策略：HTTP 模式下必须设置 MCP_API_KEY，否则 process.exit(1)。
+ * 因为 HTTP 端点可被远程访问，无认证运行等同于未授权任意代码执行。
  */
 
-import { createMcpExpressApp } from '@modelcontextprotocol/express';
-import { NodeStreamableHTTPServerTransport } from '@modelcontextprotocol/node';
-import { createMcpServer } from '../server/factory.js';
-import type { Request, Response, NextFunction } from 'express';
+import { createMcpExpressApp } from "@modelcontextprotocol/express";
+import { NodeStreamableHTTPServerTransport } from "@modelcontextprotocol/node";
+import { createMcpServer } from "../server/factory.js";
+import type { Request, Response, NextFunction } from "express";
 
 function authMiddleware(apiKey: string) {
   return (req: Request, res: Response, next: NextFunction) => {
     const auth = req.headers.authorization;
-    if (!auth || !auth.startsWith('Bearer ') || auth.slice(7) !== apiKey) {
-      res.status(401).json({ error: 'Unauthorized — 需要有效的 Bearer Token' });
+    if (!auth || !auth.startsWith("Bearer ") || auth.slice(7) !== apiKey) {
+      res.status(401).json({ error: "Unauthorized — 需要有效的 Bearer Token" });
       return;
     }
     next();
@@ -32,49 +23,52 @@ function authMiddleware(apiKey: string) {
 }
 
 async function main() {
-  const mcpServer = createMcpServer('http');
-  const app = createMcpExpressApp();
-
   const apiKey = process.env.MCP_API_KEY;
 
-  // MCP Streamable HTTP 端点
-  // 使用 stateless 模式：每次请求创建新的 transport 实例
-  // 若设置了 MCP_API_KEY，则附加 Bearer Token 认证中间件
-  //
-  // 抽取公共请求处理逻辑为 handleMcpRequest，避免认证/无认证分支代码重复
+  if (!apiKey) {
+    console.error("=".repeat(72));
+    console.error("[MCP HTTP] 启动失败 — MCP_API_KEY 环境变量未设置");
+    console.error("");
+    console.error("HTTP 模式下 MCP_API_KEY 为必填项。请设置环境变量后重试：");
+    console.error("");
+    console.error("  Windows (PowerShell):  $env:MCP_API_KEY=\"your-api-key\"");
+    console.error("  Windows (CMD):          set MCP_API_KEY=your-api-key");
+    console.error("  macOS / Linux:          export MCP_API_KEY=\"your-api-key\"");
+    console.error("");
+    console.error("=".repeat(72));
+    process.exit(1);
+  }
+
+  const mcpServer = createMcpServer("http");
+  const app = createMcpExpressApp();
+
+  console.log("[MCP HTTP] 已启用 Bearer Token 认证");
 
   const handleMcpRequest = async (req: Request, res: Response) => {
     const transport = new NodeStreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
     });
     await mcpServer.connect(transport);
-    res.on('close', () => transport.close());
+    res.on("close", () => transport.close());
     await transport.handleRequest(req, res, req.body);
   };
 
-  if (apiKey) {
-    console.log('[MCP HTTP] 已启用 Bearer Token 认证');
-    app.post('/mcp', authMiddleware(apiKey), handleMcpRequest);
-  } else {
-    console.warn('[MCP HTTP] 未设置 MCP_API_KEY，/mcp 端点无认证保护');
-    app.post('/mcp', handleMcpRequest);
-  }
+  app.post("/mcp", authMiddleware(apiKey), handleMcpRequest);
 
-  // 健康检查端点（无需认证）
-  app.get('/health', (_req, res) => {
-    res.json({ status: 'ok' });
+  app.get("/health", (_req, res) => {
+    res.json({ status: "ok" });
   });
 
-  const host = process.env.MCP_HOST || '127.0.0.1';
-  const port = parseInt(process.env.PORT || '3000', 10);
+  const host = process.env.MCP_HOST || "127.0.0.1";
+  const port = parseInt(process.env.PORT || "3000", 10);
 
   app.listen(port, host, () => {
-    console.log(`[MCP HTTP] 服务已启动 → http://${host}:${port}/mcp`);
-    console.log(`[MCP HTTP] 健康检查 → http://${host}:${port}/health`);
+    console.log("[MCP HTTP] 服务已启动 -> http://" + host + ":" + port + "/mcp");
+    console.log("[MCP HTTP] 健康检查 -> http://" + host + ":" + port + "/health");
   });
 }
 
 main().catch((err) => {
-  console.error('[MCP HTTP] 启动失败:', err);
+  console.error("[MCP HTTP] 启动失败:", err);
   process.exit(1);
 });
